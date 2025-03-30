@@ -14,7 +14,7 @@
 ​        执行打包程序
 
 ```python
-pyinstall -F main.py	
+pyinstaller -F --onefile --noconsole InventorySystem.py	
 ```
 
 
