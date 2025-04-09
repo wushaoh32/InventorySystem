@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['InventorySystem.py'],
+    ['InventorySystem_v2.py'],
     pathex=[],
     binaries=[],
     datas=[],

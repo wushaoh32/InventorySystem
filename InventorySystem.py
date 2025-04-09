@@ -84,8 +84,7 @@ class WarehouseApp:
         window.title(title)
         window.geometry("600x800")
 
-        labels = ["库房名称", "物料编号", "物料名称", "规格型号", "物料分类",
-                 "单位", "库存数量", "货架编号", "层数"]
+        labels = [ "物料编号", "物料名称", "规格型号",  "库存数量"]
         entries = {}
         
         for i, label in enumerate(labels):
