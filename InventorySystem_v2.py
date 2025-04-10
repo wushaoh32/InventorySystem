@@ -8,7 +8,7 @@ import pandas as pd
 class SparePartsManager:
     def __init__(self, master):
         self.master = master
-        master.title("备件库管理系统")
+        master.title("总装设备科备件库管理系统")
         master.geometry("{0}x{1}+0+0".format(master.winfo_screenwidth(), master.winfo_screenheight()))
         master.configure(bg='white')
         
@@ -17,7 +17,8 @@ class SparePartsManager:
         self.load_data()
 
     def create_database(self):
-        self.conn = sqlite3.connect('spare_parts.db')
+        #数据库结构
+        self.conn = sqlite3.connect('InventorySystem.db')
         self.cursor = self.conn.cursor()
         self.cursor.execute('''CREATE TABLE IF NOT EXISTS parts
                             (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -34,7 +35,7 @@ class SparePartsManager:
         self.conn.commit()
 
     def create_widgets(self):
-        # 按钮区域
+        # 按钮区域，创建窗体部件
         button_frame = tk.Frame(self.master, bg='#DCDCDC', height=self.master.winfo_screenheight()//4)
         button_frame.pack(fill='x', padx=10, pady=5)
 
@@ -43,13 +44,16 @@ class SparePartsManager:
             ('出库', self.remove_part),
             ('导入', self.import_data),
             ('导出', self.export_data),
-            ('搜索', self.search_parts)
+            ('搜索', self.search_parts),
+            ('刷新',self.refresh_data)
         ]
         
         for text, command in buttons:
+            #主界面的大按钮
             btn = tk.Button(button_frame, text=text, command=command, 
-                           width=15, height=2, bg='#DCDCDC', fg='black')
-            btn.pack(side='left', padx=20, pady=10)
+                           width=10, height=2, bg='#DCDCDC', fg='black')
+            #大按钮的间距
+            btn.pack(side='left', padx=10, pady=10)
 
         # 数据显示区域
         self.tree = ttk.Treeview(self.master, columns=('ID','Warehouse','PartNumber','PartName','Specification',
@@ -79,6 +83,11 @@ class SparePartsManager:
         rows = self.cursor.fetchall()
         for row in rows:
             self.tree.insert('', 'end', values=row)
+
+    def refresh_data(self):
+        #刷新方法，刷新数据显示,重新载入load_data方法
+        self.load_data()
+        messagebox.showinfo("系统提示","数据已刷新")
 
     def add_part(self):
         add_window = tk.Toplevel(self.master)
@@ -221,20 +230,78 @@ class SparePartsManager:
             return
         
         try:
+            # 读取Excel并处理数据
             df = pd.read_excel(file_path)
+            
+            # 检查必要列是否存在
+            required_columns = ['库房名称', '物料编号', '物料名称', '规格型号', 
+                            '物料分类', '单位', '库存数量', '货架编号', '层数']
+            if not all(col in df.columns for col in required_columns):
+                missing = [col for col in required_columns if col not in df.columns]
+                raise ValueError(f"缺少必要列: {', '.join(missing)}")
+
+            # 数据清洗
+            df = df[required_columns].copy()
+            df['库存数量'] = pd.to_numeric(df['库存数量'], errors='coerce').fillna(0).astype(int)
+            df['层数'] = pd.to_numeric(df['层数'], errors='coerce').fillna(1).astype(int)
+            
+            # 添加系统字段
             df['last_update'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             
-            self.cursor.executemany('''INSERT OR REPLACE INTO parts VALUES 
-                (?,?,?,?,?,?,?,?,?,?,?)''', df.values.tolist())
+            # 执行导入
+            success_count = 0
+            for _, row in df.iterrows():
+                try:
+                    self.cursor.execute('''INSERT OR REPLACE INTO parts 
+                        (warehouse, part_number, part_name, specification, 
+                        category, unit, quantity, shelf_number, floor, last_update)
+                        VALUES (?,?,?,?,?,?,?,?,?,?)''', 
+                        (row['库房名称'], row['物料编号'], row['物料名称'], row['规格型号'],
+                        row['物料分类'], row['单位'], row['库存数量'], 
+                        row['货架编号'], row['层数'], row['last_update']))
+                    success_count += 1
+                except Exception as e:
+                    print(f"导入失败记录: {row['物料编号']} - 错误: {str(e)}")
+            
             self.conn.commit()
             self.load_data()
-            messagebox.showinfo("成功", "数据导入完成！")
+            
+            if success_count == len(df):
+                messagebox.showinfo("成功", f"全部{success_count}条数据导入成功！")
+            else:
+                messagebox.showwarning("部分成功", 
+                    f"成功导入{success_count}/{len(df)}条数据，失败记录请查看控制台日志")
+                
         except Exception as e:
-            messagebox.showerror("错误", f"导入失败：{str(e)}")
+            messagebox.showerror("导入错误", f"导入失败: {str(e)}\n\n请检查：\n1. 数值列是否包含非数字\n2. 是否缺少必要列\n3. 数据格式是否符合要求")
 
     def export_data(self):
         try:
+            # 添加字段映射关系
+            column_mapping = {
+                'id': '序号',
+                'warehouse': '库房名称',
+                'part_number': '物料编号',
+                'part_name': '物料名称',
+                'specification': '规格型号',
+                'category': '物料分类',
+                'unit': '单位',
+                'quantity': '库存数量',
+                'shelf_number': '货架编号',
+                'floor': '层数',
+                'last_update': '最后库存变动时间'
+            }
+            
             df = pd.read_sql_query("SELECT * FROM parts", self.conn)
+            # 重命名列
+            df.rename(columns=column_mapping, inplace=True)
+            
+            # 重新排列列顺序（与界面显示一致）
+            df = df[[
+                '序号', '库房名称', '物料编号', '物料名称', '规格型号',
+                '物料分类', '单位', '库存数量', '货架编号', '层数', '最后库存变动时间'
+            ]]
+            
             file_name = f"备件物料表_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
             save_path = os.path.join(os.path.expanduser("~"), "Desktop", file_name)
             df.to_excel(save_path, index=False)
@@ -275,8 +342,11 @@ class SparePartsManager:
                 self.tree.insert('', 'end', values=row)
                 
             search_window.destroy()
-
-        tk.Button(search_window, text="搜索", command=perform_search).pack()      
+        def cancel_search():#关闭时自动刷新
+            search_window.destroy()
+            self.refresh_data()
+        tk.Button(search_window,text="取消",command=cancel_search,width=6).pack(side='left',padx=35)
+        tk.Button(search_window, text="搜索", command=perform_search,width=6).pack(side='right',padx=35)      
           
 if __name__ == "__main__":
     root = tk.Tk()
