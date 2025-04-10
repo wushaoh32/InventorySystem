@@ -45,7 +45,8 @@ class SparePartsManager:
             ('导入', self.import_data),
             ('导出', self.export_data),
             ('搜索', self.search_parts),
-            ('刷新',self.refresh_data)
+            ('刷新',self.refresh_data),
+            ('生成模版',self.generate_template)
         ]
         
         for text, command in buttons:
@@ -348,6 +349,19 @@ class SparePartsManager:
         tk.Button(search_window,text="取消",command=cancel_search,width=6).pack(side='left',padx=35)
         tk.Button(search_window, text="搜索", command=perform_search,width=6).pack(side='right',padx=35)      
           
+    def generate_template(self):
+        #生成模版的方法
+        template_df = pd.DataFrame(columns=[
+            '库房名称','物料编号','物料名称','规格型号','物料分类','单位','库存数量','货架编号','层数'
+        ])
+        save_path = filedialog.asksaveasfilename(
+            defaultextension=".xlsx",
+            filetypes=[("Excel文件","*.xlsx")],
+            initialfile="备件导入模版.xlsx"
+        )
+        if save_path:
+            template_df.to_excel(save_path,index=False)
+            messagebox.showinfo("成功",f"模版已保存到：{C:/Users/admin/Desktop}")
 if __name__ == "__main__":
     root = tk.Tk()
     app = SparePartsManager(root)
