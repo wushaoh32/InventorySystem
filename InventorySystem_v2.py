@@ -6,7 +6,13 @@ from datetime import datetime
 import pandas as pd
 
 class SparePartsManager:
+
+    #主函数
     def __init__(self, master):
+        #初始化时建立连接
+        self.conn = sqlite3.connect('spare_parts.db')
+        self.cursor = self.conn.cursor()
+
         self.master = master
         master.title("总装设备科备件库管理系统")
         master.geometry("{0}x{1}+0+0".format(master.winfo_screenwidth(), master.winfo_screenheight()))
@@ -16,10 +22,12 @@ class SparePartsManager:
         self.create_widgets()
         self.load_data()
 
+    #数据库创建函数
     def create_database(self):
         #数据库结构
         self.conn = sqlite3.connect('InventorySystem.db')
         self.cursor = self.conn.cursor()
+        #通过数据库连接对象创建一个游标对象，游标用于执行SQL语句并处理查询结果,execute是游标对象的方法,用于执行SQL语句
         self.cursor.execute('''CREATE TABLE IF NOT EXISTS parts
                             (id INTEGER PRIMARY KEY AUTOINCREMENT,
                              warehouse TEXT,
@@ -33,7 +41,16 @@ class SparePartsManager:
                              floor INTEGER,
                              last_update TIMESTAMP)''')
         self.conn.commit()
-
+        #创建日志表
+        self.cursor.execute('''CREATE TABLE IF NOT EXISTS operation_logs
+                        (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                         operation_type TEXT,
+                         part_number TEXT,
+                         quantity_change INTEGER,
+                         operator TEXT DEFAULT 'system',
+                         operation_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+        self.conn.commit()
+    #主界面窗体函数
     def create_widgets(self):
         # 按钮区域，创建窗体部件
         button_frame = tk.Frame(self.master, bg='#DCDCDC', height=self.master.winfo_screenheight()//4)
@@ -46,7 +63,8 @@ class SparePartsManager:
             ('导出', self.export_data),
             ('搜索', self.search_parts),
             ('刷新',self.refresh_data),
-            ('生成模版',self.generate_template)
+            ('生成模版',self.generate_template),
+            ('日志',self.show_logs)
         ]
         
         for text, command in buttons:
@@ -76,6 +94,7 @@ class SparePartsManager:
         self.tree.configure(yscrollcommand=vsb.set)
         self.tree.pack(fill='both', expand=True)
 
+    #主界面数据载入函数
     def load_data(self):
         for row in self.tree.get_children():
             self.tree.delete(row)
@@ -84,12 +103,14 @@ class SparePartsManager:
         rows = self.cursor.fetchall()
         for row in rows:
             self.tree.insert('', 'end', values=row)
-
+    
+    #刷新函数
     def refresh_data(self):
-        #刷新方法，刷新数据显示,重新载入load_data方法
+        
         self.load_data()
         messagebox.showinfo("系统提示","数据已刷新")
 
+    #主界面数据添加函数
     def add_part(self):
         add_window = tk.Toplevel(self.master)
         add_window.title("入库管理")
@@ -112,6 +133,7 @@ class SparePartsManager:
         tk.Button(add_window, text="提交", 
                  command=lambda: self.submit_add(entries, add_window)).grid(row=len(labels), columnspan=2)
 
+    #自动填充补全函数
     def auto_fill_info(self, entries):
         part_number = entries['物料编号'].get()
         if part_number:
@@ -125,6 +147,7 @@ class SparePartsManager:
                 entries['货架编号'].insert(0, existing[8])
                 entries['层数'].insert(0, existing[9])
 
+    #出库函数的二级界面函数
     def update_specification(self, entries):
         part_name = entries['物料名称'].get()
         if part_name:
@@ -133,6 +156,7 @@ class SparePartsManager:
             specs = [row[0] for row in self.cursor.fetchall()]
             entries['规格型号'].config(values=specs)
 
+    #入库函数
     def submit_add(self, entries, window):
         data = {
             'warehouse': entries['库房名称'].get(),
@@ -148,6 +172,10 @@ class SparePartsManager:
         }
         
         try:
+            # 获取所有输入值，日志功能的大哥
+            part_number = entries['物料编号'].get()
+            quantity = int(entries['数量'].get())
+
             self.cursor.execute('''INSERT INTO parts VALUES 
                 (NULL,?,?,?,?,?,?,?,?,?,?) 
                 ON CONFLICT(part_number) DO UPDATE SET 
@@ -157,11 +185,21 @@ class SparePartsManager:
                 data['specification'], data['category'], data['unit'],
                 data['quantity'], data['shelf'], data['floor'], data['time']))
             self.conn.commit()
+
+            # 在提交成功后添加日志记录
+            self.log_operation(
+                operation_type="入库",
+                part_number=part_number,
+                quantity_change=quantity
+            )
+
             window.destroy()
             self.load_data()
+            
         except Exception as e:
             messagebox.showerror("错误", f"保存失败：{str(e)}")
-
+            
+    #出库函数      
     def remove_part(self):
         selected = self.tree.selection()
         if not selected:
@@ -180,6 +218,9 @@ class SparePartsManager:
         
         def confirm_remove():
             try:
+                qty = int(quantity_entry.get())  # 获取出库数量
+                part_info = self.tree.item(selected[0])['values']  # 获取选中物料信息
+
                 qty = int(quantity_entry.get())
                 if qty <= 0:
                     raise ValueError
@@ -194,7 +235,14 @@ class SparePartsManager:
                 if remaining <= 0:
                     self.cursor.execute("DELETE FROM parts WHERE part_number=?", (part_info[2],))
                     self.conn.commit()
-                    
+                
+                #出库逻辑日志
+                self.log_operation(
+                    operation_type="出库",
+                    part_number=part_info[2],  # 物料编号是第3列
+                    quantity_change=-qty  # 负数表示减少
+                )
+
                 remove_window.destroy()
                 self.load_data()
             except ValueError:
@@ -221,7 +269,8 @@ class SparePartsManager:
         def search_parts(self):
             search_window = tk.Toplevel(self.master)
             # 搜索界面逻辑...
-
+        
+    #导入函数
     def import_data(self):
         file_path = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx")])
         if not file_path:
@@ -253,6 +302,7 @@ class SparePartsManager:
             success_count = 0
             for _, row in df.iterrows():
                 try:
+                    #原有数据库插入代码
                     self.cursor.execute('''INSERT OR REPLACE INTO parts 
                         (warehouse, part_number, part_name, specification, 
                         category, unit, quantity, shelf_number, floor, last_update)
@@ -260,6 +310,13 @@ class SparePartsManager:
                         (row['库房名称'], row['物料编号'], row['物料名称'], row['规格型号'],
                         row['物料分类'], row['单位'], row['库存数量'], 
                         row['货架编号'], row['层数'], row['last_update']))
+                    success_count += 1
+                    #为每条记录添加日志
+                    self.log_operation(
+                        operation_type="导入",
+                        part_number=row['物料编号'],
+                        quantity_change=row['库存数量']
+                    )
                     success_count += 1
                 except Exception as e:
                     print(f"导入失败记录: {row['物料编号']} - 错误: {str(e)}")
@@ -275,7 +332,9 @@ class SparePartsManager:
                 
         except Exception as e:
             messagebox.showerror("导入错误", f"导入失败: {str(e)}\n\n请检查：\n1. 数值列是否包含非数字\n2. 是否缺少必要列\n3. 数据格式是否符合要求")
-
+            messagebox.showinfo("导入说明", "请确保Excel包含以下9列且数据格式正确：\n" "库房名称 | 物料编号 | 物料名称 | 规格型号\n" "物料分类 | 单位 | 库存数量(数字) | 货架编号 | 层数(数字)")
+    
+    #导出函数
     def export_data(self):
         try:
             # 添加字段映射关系
@@ -310,6 +369,7 @@ class SparePartsManager:
         except Exception as e:
             messagebox.showerror("错误", f"导出失败：{str(e)}")
 
+    #搜索函数
     def search_parts(self):
         search_window = tk.Toplevel(self.master)
         search_window.title("搜索物料")
@@ -348,7 +408,8 @@ class SparePartsManager:
             self.refresh_data()
         tk.Button(search_window,text="取消",command=cancel_search,width=6).pack(side='left',padx=35)
         tk.Button(search_window, text="搜索", command=perform_search,width=6).pack(side='right',padx=35)      
-          
+    
+    #模版生成函数    
     def generate_template(self):
         #生成模版的方法
         template_df = pd.DataFrame(columns=[
@@ -362,6 +423,65 @@ class SparePartsManager:
         if save_path:
             template_df.to_excel(save_path,index=False)
             messagebox.showinfo("成功",f"模版已保存到：{C:/Users/admin/Desktop}")
+    
+    #日志记录函数
+    def log_operation(self, operation_type, part_number, quantity_change, operator="system"):
+        """记录操作日志"""
+        try:
+            self.cursor.execute('''INSERT INTO operation_logs 
+                            (operation_type, part_number, quantity_change, operator)
+                            VALUES (?,?,?,?)''',
+                            (operation_type, part_number, quantity_change, operator))
+            self.conn.commit()
+        except Exception as e:
+            print(f"日志记录失败：{str(e)}")
+
+    #创建日志查看窗口
+    def show_logs(self):
+        log_window = tk.Toplevel(self.master)
+        log_window.title("操作日志")
+        log_window.geometry("800x600")
+        
+        # 日志表格
+        tree = ttk.Treeview(log_window, columns=('ID','操作类型','物料编号','数量变化','操作人','操作时间'), show='headings')
+        
+        columns = [
+            ('ID', 50), ('操作类型', 80), ('物料编号', 120), 
+            ('数量变化', 80), ('操作人', 80), ('操作时间', 150)
+        ]
+        
+        for col, width in columns:
+            tree.heading(col, text=col)
+            tree.column(col, width=width, anchor='center')
+        
+        # 添加滚动条
+        scrollbar = ttk.Scrollbar(log_window, orient="vertical", command=tree.yview)
+        scrollbar.pack(side='right', fill='y')
+        tree.configure(yscrollcommand=scrollbar.set)
+        
+        # 查询并显示日志
+        self.cursor.execute("SELECT * FROM operation_logs ORDER BY operation_time DESC")
+        for row in self.cursor.fetchall():
+            tree.insert('', 'end', values=row)
+        
+        tree.pack(fill='both', expand=True)
+        
+        # 添加导出按钮
+        tk.Button(log_window, text="导出日志", 
+                command=lambda: self.export_logs()).pack(pady=5)
+
+    def export_logs(self):
+        """导出日志到Excel"""
+        df = pd.read_sql_query("SELECT * FROM operation_logs ORDER BY operation_time DESC", self.conn)
+        file_name = f"备件操作日志_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        save_path = filedialog.asksaveasfilename(
+            defaultextension=".xlsx",
+            initialfile=file_name,
+            filetypes=[("Excel文件", "*.xlsx")]
+        )
+        if save_path:
+            df.to_excel(save_path, index=False)
+            messagebox.showinfo("成功", f"日志已导出到: {save_path}")    
 if __name__ == "__main__":
     root = tk.Tk()
     app = SparePartsManager(root)
