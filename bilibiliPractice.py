@@ -8,4 +8,4 @@ asc_lst2 = sorted(lst2,reverse=True)
 print(lst)
 print(lst2)
 print(asc_lst2)
-
+2025/4/12/106

@@ -1,18 +1,23 @@
 import os
 import sqlite3
-import tkinter as tk
+import tkinter as tk#thinter创建图形界面的标准库，并简称为tk
 from tkinter import ttk, messagebox, filedialog
 from datetime import datetime
 import pandas as pd
 
 class SparePartsManager:
-
-    #主函数
+        #self是一个约定成俗的参数名，它代表类的实例对象本身。当你调用类的实例方法时，Python会自动将实例对象作为第一个参数传递给改方法，
+        #而这个参数在方法定义中通常被命名为self
+    
+    #1主函数
     def __init__(self, master):
+        #__init__是类的构造函数，每当创建一个SparePartsManager实例时都会调用
         #初始化时建立连接
-        self.conn = sqlite3.connect('spare_parts.db')
+        #当调整表结构后需要删除旧表！！！！！！！！！！！！！！
+        self.conn = sqlite3.connect('数据库.db')
         self.cursor = self.conn.cursor()
 
+        #这行代码将传入构造函数的master参数赋值给实例对象master属性，此处master就指代正在创建的SparePartsManager实例
         self.master = master
         master.title("总装设备科备件库管理系统")
         master.geometry("{0}x{1}+0+0".format(master.winfo_screenwidth(), master.winfo_screenheight()))
@@ -22,12 +27,14 @@ class SparePartsManager:
         self.create_widgets()
         self.load_data()
 
-    #数据库创建函数
+    #2数据库创建函数
     def create_database(self):
         #数据库结构
-        self.conn = sqlite3.connect('InventorySystem.db')
+        #当调整表结构后需要删除旧表！！！！！！！！！！！！！！
+        self.conn = sqlite3.connect('数据库.db')
         self.cursor = self.conn.cursor()
         #通过数据库连接对象创建一个游标对象，游标用于执行SQL语句并处理查询结果,execute是游标对象的方法,用于执行SQL语句
+        #新增价格列（REAL类型存储小数）
         self.cursor.execute('''CREATE TABLE IF NOT EXISTS parts
                             (id INTEGER PRIMARY KEY AUTOINCREMENT,
                              warehouse TEXT,
@@ -37,6 +44,7 @@ class SparePartsManager:
                              category TEXT,
                              unit TEXT,
                              quantity INTEGER,
+                             price REAL,
                              shelf_number TEXT,
                              floor INTEGER,
                              last_update TIMESTAMP)''')
@@ -51,7 +59,7 @@ class SparePartsManager:
                          operation_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
         self.conn.commit()
    
-    #主界面窗体函数
+    #3主界面窗体函数
     def create_widgets(self):
         # 按钮区域，创建窗体部件
         button_frame = tk.Frame(self.master, bg='#DCDCDC', height=self.master.winfo_screenheight()//4)
@@ -77,13 +85,13 @@ class SparePartsManager:
 
         # 数据显示区域
         self.tree = ttk.Treeview(self.master, columns=('ID','Warehouse','PartNumber','PartName','Specification',
-                                                     'Category','Unit','Quantity','Shelf','Floor','LastUpdate'),
+                                                     'Category','Unit','Quantity','Price','Shelf','Floor','LastUpdate'),
                                                      show='headings')
         
         columns = [
             ('ID', 50), ('库房名称', 100), ('物料编号', 120), ('物料名称', 150),
             ('规格型号', 150), ('物料分类', 100), ('单位', 50), ('库存数量', 80),
-            ('货架编号', 80), ('层数', 50), ('最后更新时间', 150)
+            ('价格（元）',80),('货架编号', 80), ('层数', 50), ('最后更新时间', 150)
         ]
         
         for idx, (col, width) in enumerate(columns):
@@ -95,7 +103,7 @@ class SparePartsManager:
         self.tree.configure(yscrollcommand=vsb.set)
         self.tree.pack(fill='both', expand=True)
 
-    #主界面数据载入函数,TreeView是Python库的组件，以树形显示数据
+    #4主界面数据载入函数,TreeView是Python库的组件，以树形显示数据
     def load_data(self):
         for row in self.tree.get_children():
             self.tree.delete(row)
@@ -108,13 +116,14 @@ class SparePartsManager:
         
         # 配置零库存样式,数量为0时显示为红色，数据信息不删除，当重新入库时，变为黑色
         self.tree.tag_configure('zero', foreground='red')
-    #刷新函数
+    
+    #5刷新函数
     def refresh_data(self):
         
         self.load_data()
         messagebox.showinfo("系统提示","数据已刷新")
 
-    #主界面数据添加函数
+    #6主界面数据添加函数
     def add_part(self):
         add_window = tk.Toplevel(self.master)
         add_window.title("入库管理")
@@ -137,7 +146,7 @@ class SparePartsManager:
         tk.Button(add_window, text="提交", 
                  command=lambda: self.submit_add(entries, add_window)).grid(row=len(labels), columnspan=2)
 
-    #自动填充补全函数
+    #7自动填充补全函数
     def auto_fill_info(self, entries):
         part_number = entries['物料编号'].get()
         if part_number:
@@ -151,7 +160,7 @@ class SparePartsManager:
                 entries['货架编号'].insert(0, existing[8])
                 entries['层数'].insert(0, existing[9])
 
-    #出库函数的二级界面函数
+    #8出库函数的二级界面函数
     def update_specification(self, entries):
         part_name = entries['物料名称'].get()
         if part_name:
@@ -160,7 +169,7 @@ class SparePartsManager:
             specs = [row[0] for row in self.cursor.fetchall()]
             entries['规格型号'].config(values=specs)
 
-    #入库函数
+    #9入库函数
     def submit_add(self, entries, window):
         data = {
             'warehouse': entries['库房名称'].get(),
@@ -201,7 +210,7 @@ class SparePartsManager:
         except Exception as e:
             messagebox.showerror("错误", f"保存失败：{str(e)}")
             
-    #出库函数      
+    #10出库函数      
     def remove_part(self):
         selected = self.tree.selection()
         if not selected:
@@ -277,7 +286,7 @@ class SparePartsManager:
             search_window = tk.Toplevel(self.master)
             # 搜索界面逻辑...
         
-    #导入函数
+    #11导入函数
     def import_data(self):
         file_path = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx")])
         if not file_path:
@@ -290,17 +299,21 @@ class SparePartsManager:
             # 读取Excel并处理数据
             df = pd.read_excel(file_path)
             
-            # 检查必要列是否存在
+            # 检查必要列是否存在,新增价格列，修改列数为10列
             required_columns = ['库房名称', '物料编号', '物料名称', '规格型号', 
-                            '物料分类', '单位', '库存数量', '货架编号', '层数']
+                            '物料分类', '单位', '库存数量', '价格','货架编号', '层数']
+            
             if not all(col in df.columns for col in required_columns):
                 missing = [col for col in required_columns if col not in df.columns]
                 raise ValueError(f"缺少必要列: {', '.join(missing)}")
 
-            # 数据清洗
+            # 对Excel中的数据进行清洗
             df = df[required_columns].copy()
             df['库存数量'] = pd.to_numeric(df['库存数量'], errors='coerce').fillna(0).astype(int)
             df['层数'] = pd.to_numeric(df['层数'], errors='coerce').fillna(1).astype(int)
+            #价格的清理，我直接用了一个函数来实现，因为他这个功能需要处理多种异常
+            df['价格'] = df['价格'].apply(self.clean_price)
+
             
             # 添加系统字段
             df['last_update'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -312,10 +325,13 @@ class SparePartsManager:
                     #原有数据库插入代码
                     self.cursor.execute('''INSERT OR REPLACE INTO parts 
                         (warehouse, part_number, part_name, specification, 
-                        category, unit, quantity, shelf_number, floor, last_update)
-                        VALUES (?,?,?,?,?,?,?,?,?,?)''', 
+                        category, unit, quantity, price, shelf_number, floor, last_update)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?)''', 
+                        #千万记得调整表结构时，对此处的？进行修改，否则报错如“10 values for 11 column”
+                        #此处SQL语句中的？是一种占位符，防止SQL注入攻击，用上?之后，无论用户输入什么内容，
+                        # 都只会被当做数据来处理，而不会被解析为SQL语句的一部分
                         (row['库房名称'], row['物料编号'], row['物料名称'], row['规格型号'],
-                        row['物料分类'], row['单位'], row['库存数量'], 
+                        row['物料分类'], row['单位'], row['库存数量'], row['价格'],
                         row['货架编号'], row['层数'], row['last_update']))
                     success_count += 1
                     #为每条记录添加日志
@@ -339,9 +355,9 @@ class SparePartsManager:
                 
         except Exception as e:
             messagebox.showerror("导入错误", f"导入失败: {str(e)}\n\n请检查：\n1. 数值列是否包含非数字\n2. 是否缺少必要列\n3. 数据格式是否符合要求")
-            messagebox.showinfo("导入说明", "请确保Excel包含以下9列且数据格式正确：\n" "库房名称 | 物料编号 | 物料名称 | 规格型号\n" "物料分类 | 单位 | 库存数量(数字) | 货架编号 | 层数(数字)")
+            messagebox.showinfo("导入说明", "请确保Excel包含以下9列且数据格式正确：\n" "库房名称 | 物料编号 | 物料名称 | 规格型号\n" "物料分类 | 单位 | 库存数量(数字)|价格 | 货架编号 | 层数(数字)")
     
-    #导出函数
+    #12导出函数
     def export_data(self):
         try:
             # 添加字段映射关系
@@ -354,6 +370,7 @@ class SparePartsManager:
                 'category': '物料分类',
                 'unit': '单位',
                 'quantity': '库存数量',
+                'price':'价格（元）',
                 'shelf_number': '货架编号',
                 'floor': '层数',
                 'last_update': '最后库存变动时间'
@@ -366,7 +383,7 @@ class SparePartsManager:
             # 重新排列列顺序（与界面显示一致）
             df = df[[
                 '序号', '库房名称', '物料编号', '物料名称', '规格型号',
-                '物料分类', '单位', '库存数量', '货架编号', '层数', '最后库存变动时间'
+                '物料分类', '单位', '库存数量','价格（元）', '货架编号', '层数', '最后库存变动时间'
             ]]
             
             file_name = f"备件物料表_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
@@ -376,7 +393,7 @@ class SparePartsManager:
         except Exception as e:
             messagebox.showerror("错误", f"导出失败：{str(e)}")
 
-    #搜索函数
+    #13搜索函数
     def search_parts(self):
         search_window = tk.Toplevel(self.master)
         search_window.title("搜索物料")
@@ -416,12 +433,16 @@ class SparePartsManager:
         tk.Button(search_window,text="取消",command=cancel_search,width=6).pack(side='left',padx=35)
         tk.Button(search_window, text="搜索", command=perform_search,width=6).pack(side='right',padx=35)      
     
-    #模版生成函数    
+    #14模版生成函数    
     def generate_template(self):
-        #生成模版的方法
+        #生成模版的表头
         template_df = pd.DataFrame(columns=[
-            '库房名称','物料编号','物料名称','规格型号','物料分类','单位','库存数量','货架编号','层数'
+            '库房名称','物料编号','物料名称','规格型号','物料分类','单位','库存数量','价格','货架编号','层数'
         ])
+        #添加实例数据
+        template_df.loc[0] = [
+            "示例库房","GWGW0101","示例物料","SPEC-001","电气设备","个",10,99.5,"A01",2
+        ]
         save_path = filedialog.asksaveasfilename(
             defaultextension=".xlsx",
             filetypes=[("Excel文件","*.xlsx")],
@@ -429,9 +450,10 @@ class SparePartsManager:
         )
         if save_path:
             template_df.to_excel(save_path,index=False)
-            messagebox.showinfo("成功",f"模版已保存到：{C:/Users/admin/Desktop}")
+            #在原始字符串前加  r  ，可以让字符串中的字符都按照字面意思解析，不会对  \  进行转义处理。
+            messagebox.showinfo("成功",f"模版已保存到：{r'C:/Users/admin/Desktop'}") 
     
-    #日志记录函数
+    #15日志记录函数
     def log_operation(self, operation_type, part_number, quantity_change, operator="system"):
         """记录操作日志"""
         try:
@@ -443,7 +465,7 @@ class SparePartsManager:
         except Exception as e:
             print(f"日志记录失败：{str(e)}")
 
-    #创建日志查看窗口
+    #16创建日志查看窗口
     def show_logs(self):
         log_window = tk.Toplevel(self.master)
         log_window.title("操作日志")
@@ -477,6 +499,7 @@ class SparePartsManager:
         tk.Button(log_window, text="导出日志", 
                 command=lambda: self.export_logs()).pack(pady=5)
 
+    #17导出日志函数
     def export_logs(self):
         """导出日志到Excel"""
         df = pd.read_sql_query("SELECT * FROM operation_logs ORDER BY operation_time DESC", self.conn)
@@ -489,7 +512,25 @@ class SparePartsManager:
         if save_path:
             df.to_excel(save_path, index=False)
             messagebox.showinfo("成功", f"日志已导出到: {save_path}")    
+
+    #18数据清洗函数,保留1位小数
+    def clean_price(self,price_input):
+        try:
+            #数据清洗：①去除货币符号、②去除千分位逗号、③保留1位小数、④无效数据默认设为0.0
+            #isinstance(object,classinfo)是一个内置函数，用于判断一个对象是否是指定类型的实例
+            #strip()是字符串对象的一个方法，用于移除字符串开头和结尾的指定字符（空格、制表、换行）
+            #round()是一个内置函数，对数字进行四舍五入操作
+            #max()是一个内置函数，用于返回可迭代对象中的最大元素，此处可以处理如果price中产生负数
+            if isinstance(price_input,str):
+                price_input = price_input.replace('￥','').replace('$','').replace(',','').replace('，','').strip()
+            price = round(float(price_input),1)#四舍五入1位
+            return max(0.0,price)#确保非负数
+        except (ValueError,TypeError):
+            return 0.0
+
+
+#常用代码块结构，__name__是python中每个py文件都有的内置变量。当一个py文件作为主程序直接运行时，该文件中__name__变量会被赋值为__main__
 if __name__ == "__main__":
-    root = tk.Tk()
+    root = tk.Tk()#调用Tk创建一个主窗口对象并赋值给root
     app = SparePartsManager(root)
     root.mainloop()
