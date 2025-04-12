@@ -50,6 +50,7 @@ class SparePartsManager:
                          operator TEXT DEFAULT 'system',
                          operation_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
         self.conn.commit()
+   
     #主界面窗体函数
     def create_widgets(self):
         # 按钮区域，创建窗体部件
@@ -94,16 +95,19 @@ class SparePartsManager:
         self.tree.configure(yscrollcommand=vsb.set)
         self.tree.pack(fill='both', expand=True)
 
-    #主界面数据载入函数
+    #主界面数据载入函数,TreeView是Python库的组件，以树形显示数据
     def load_data(self):
         for row in self.tree.get_children():
             self.tree.delete(row)
             
         self.cursor.execute("SELECT * FROM parts")
-        rows = self.cursor.fetchall()
-        for row in rows:
-            self.tree.insert('', 'end', values=row)
-    
+        for row in self.cursor.fetchall():
+            item = self.tree.insert('', 'end', values=row)
+            if row[7] == 0:  # quantity=0
+                self.tree.item(item, tags=('zero',))
+        
+        # 配置零库存样式,数量为0时显示为红色，数据信息不删除，当重新入库时，变为黑色
+        self.tree.tag_configure('zero', foreground='red')
     #刷新函数
     def refresh_data(self):
         
@@ -176,14 +180,12 @@ class SparePartsManager:
             part_number = entries['物料编号'].get()
             quantity = int(entries['数量'].get())
 
-            self.cursor.execute('''INSERT INTO parts VALUES 
-                (NULL,?,?,?,?,?,?,?,?,?,?) 
-                ON CONFLICT(part_number) DO UPDATE SET 
-                quantity=quantity+excluded.quantity,
-                last_update=excluded.last_update''',
-                (data['warehouse'], data['part_number'], data['part_name'],
-                data['specification'], data['category'], data['unit'],
-                data['quantity'], data['shelf'], data['floor'], data['time']))
+            #确保在入库的方法中不删除零库存记录
+            self.cursor.execute('''UPDATE parts SET 
+                quantity=quantity+?, 
+                last_update=?
+                WHERE part_number=?''',
+                (quantity, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), part_number))
             self.conn.commit()
 
             # 在提交成功后添加日志记录
@@ -208,9 +210,12 @@ class SparePartsManager:
         
         part_info = self.tree.item(selected[0])['values']
         remove_window = tk.Toplevel(self.master)
+        remove_window.title("出库操作")
         
+        # 显示物料信息（不可编辑）
         tk.Label(remove_window, text=f"物料编号：{part_info[2]}").pack()
         tk.Label(remove_window, text=f"物料名称：{part_info[3]}").pack()
+        tk.Label(remove_window, text=f"当前库存：{part_info[7]}").pack()
         
         tk.Label(remove_window, text="出库数量：").pack()
         quantity_entry = tk.Entry(remove_window)
@@ -218,37 +223,39 @@ class SparePartsManager:
         
         def confirm_remove():
             try:
-                qty = int(quantity_entry.get())  # 获取出库数量
-                part_info = self.tree.item(selected[0])['values']  # 获取选中物料信息
-
                 qty = int(quantity_entry.get())
+                current_qty = int(part_info[7])  # 当前库存数量
+                
+                # 验证出库数量
                 if qty <= 0:
-                    raise ValueError
+                    messagebox.showerror("错误", "出库数量必须大于0")
+                    return
                     
-                self.cursor.execute("UPDATE parts SET quantity=quantity-? WHERE part_number=?",
-                                (qty, part_info[2]))
+                if qty > current_qty:
+                    messagebox.showerror("出库失败", "已有备件数量不足")
+                    return
+                
+                # 更新库存数量（不再删除记录）
+                new_qty = current_qty - qty
+                self.cursor.execute("UPDATE parts SET quantity=?, last_update=? WHERE part_number=?",
+                                (new_qty, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), part_info[2]))
                 self.conn.commit()
                 
-                self.cursor.execute("SELECT quantity FROM parts WHERE part_number=?", (part_info[2],))
-                remaining = self.cursor.fetchone()[0]
-                
-                if remaining <= 0:
-                    self.cursor.execute("DELETE FROM parts WHERE part_number=?", (part_info[2],))
-                    self.conn.commit()
-                
-                #出库逻辑日志
+                # 记录出库日志
                 self.log_operation(
                     operation_type="出库",
-                    part_number=part_info[2],  # 物料编号是第3列
-                    quantity_change=-qty  # 负数表示减少
+                    part_number=part_info[2],
+                    quantity_change=-qty
                 )
-
+                
                 remove_window.destroy()
                 self.load_data()
+                messagebox.showinfo("成功", f"成功出库 {qty} 个 {part_info[3]}")
+                
             except ValueError:
                 messagebox.showerror("错误", "请输入有效的正整数值")
-
-        tk.Button(remove_window, text="确认出库", command=confirm_remove).pack() 
+        
+        tk.Button(remove_window, text="确认出库", command=confirm_remove).pack()
 
         def import_data(self):
             file_path = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx")])
@@ -351,7 +358,7 @@ class SparePartsManager:
                 'floor': '层数',
                 'last_update': '最后库存变动时间'
             }
-            
+            #导出的数据包含零库存记录
             df = pd.read_sql_query("SELECT * FROM parts", self.conn)
             # 重命名列
             df.rename(columns=column_mapping, inplace=True)
