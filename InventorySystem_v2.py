@@ -132,20 +132,19 @@ class SparePartsManager:
 
     #6入库函数：入库按钮、耳机弹窗入库信息、自动补全，进行整合（看似只加了一个价格列，结果修改一天）
     def add_part(self):
-        """整合后的入库功能（含价格字段）"""
         add_window = tk.Toplevel(self.master)
         add_window.title("备件入库")
         
-        # 字段配置（新增price）
+        # 字段配置（调整库房名称为下拉列表）
         fields = [
-            ('库房名称', 'text'), 
+            ('库房名称', 'combo'),  # 修改为下拉列表
             ('物料编号', 'text'),
             ('物料名称', 'text'),
             ('规格型号', 'combo'),
             ('物料分类', 'text'),
             ('单位', 'text'),
             ('库存数量', 'number'),
-            ('价格(元)', 'number'),  # 新增价格字段
+            ('价格(元)', 'number'),
             ('货架编号', 'text'),
             ('层数', 'number')
         ]
@@ -159,21 +158,33 @@ class SparePartsManager:
             if ftype == 'combo':
                 entry = ttk.Combobox(add_window, width=23)
                 entry.grid(row=idx, column=1, padx=5, pady=5)
+                # 如果是库房名称，初始化下拉列表
+                if label == '库房名称':
+                    self.refresh_warehouse_list(entry)
             else:
                 entry = tk.Entry(add_window, width=25)
                 entry.grid(row=idx, column=1, padx=5, pady=5)
             
             entries[label] = entry
-        
-        # 自动填充功能
+
+        # 新增刷新库房列表按钮
+        refresh_btn = tk.Button(add_window, text="刷新库房列表", 
+                            command=lambda: self.refresh_warehouse_list(entries['库房名称']))
+        refresh_btn.grid(row=0, column=2, padx=5)
+
+        # 自动填充功能（修改为联合校验）
         def auto_fill(event=None):
-            """物料编号/名称输入后自动填充"""
-            # 根据物料编号填充
+            """联合校验库房名称和物料编号"""
+            warehouse = entries['库房名称'].get()
             part_number = entries['物料编号'].get()
-            if part_number:
-                self.cursor.execute("SELECT * FROM parts WHERE part_number=?", (part_number,))
+            
+            # 联合查询
+            if warehouse and part_number:
+                self.cursor.execute("SELECT * FROM parts WHERE warehouse=? AND part_number=?", 
+                                (warehouse, part_number))
                 existing = self.cursor.fetchone()
                 if existing:
+                    # 自动填充其他字段
                     entries['物料名称'].delete(0, tk.END)
                     entries['物料名称'].insert(0, existing[3])
                     entries['规格型号'].set(existing[4])
@@ -182,22 +193,21 @@ class SparePartsManager:
                     entries['单位'].delete(0, tk.END)
                     entries['单位'].insert(0, existing[6])
                     entries['价格(元)'].delete(0, tk.END)
-                    entries['价格(元)'].insert(0, f"{existing[8]:.1f}")  # 填充价格
+                    entries['价格(元)'].insert(0, f"{existing[8]:.1f}")
                     entries['货架编号'].delete(0, tk.END)
                     entries['货架编号'].insert(0, existing[9])
                     entries['层数'].delete(0, tk.END)
                     entries['层数'].insert(0, existing[10])
                     return
             
-            # 根据物料名称更新规格型号下拉框
+            # 更新规格型号下拉
             part_name = entries['物料名称'].get()
             if part_name:
                 self.cursor.execute("SELECT DISTINCT specification FROM parts WHERE part_name LIKE ?", 
                                 (f'%{part_name}%',))
-                specs = [row[0] for row in self.cursor.fetchall()]
-                entries['规格型号'].config(values=specs)
-        
-        # 绑定事件
+                entries['规格型号']['values'] = [row[0] for row in self.cursor.fetchall()]
+
+        entries['库房名称'].bind('<<ComboboxSelected>>', auto_fill)
         entries['物料编号'].bind('<FocusOut>', auto_fill)
         entries['物料名称'].bind('<KeyRelease>', auto_fill)
         
@@ -205,6 +215,19 @@ class SparePartsManager:
         def submit():
             """整合后的提交处理"""
             try:
+                warehouse = entries['库房名称'].get().strip()
+                part_number = entries['物料编号'].get().strip()
+                
+                # 校验库房是否存在
+                self.cursor.execute("SELECT 1 FROM parts WHERE warehouse=?", (warehouse,))
+                warehouse_exists = self.cursor.fetchone()
+                
+                if not warehouse_exists:
+                    # 新库房确认
+                    if not messagebox.askyesno("确认", 
+                        f"库房 '{warehouse}' 不存在，确认要创建新库房吗？"):
+                        messagebox.showinfo("提示", "请检查库房名称")
+                        return
                 # 数据校验
                 required_fields = ['库房名称', '物料编号', '物料名称', '规格型号', 
                                 '物料分类', '单位', '库存数量', '价格(元)']
@@ -248,10 +271,11 @@ class SparePartsManager:
                 
                 # 记录日志
                 self.log_operation(
-                    operation_type="入库",
-                    part_number=data['part_number'],
-                    quantity_change=data['quantity']
-                )
+                operation_type="入库",
+                part_number=part_number,
+                quantity_change=data['quantity'],
+                extra_info=f"库房: {warehouse}"
+            )
                 
                 add_window.destroy()
                 self.load_data()
@@ -266,7 +290,7 @@ class SparePartsManager:
         tk.Button(add_window, text="提交入库", command=submit, 
                 bg='#4CAF50', fg='white').grid(row=len(fields), columnspan=2, pady=10)    
 
-    #8出库函数的二级界面函数
+    #7出库函数的二级界面函数
     def update_specification(self, entries):
         part_name = entries['物料名称'].get()
         if part_name:
@@ -275,7 +299,7 @@ class SparePartsManager:
             specs = [row[0] for row in self.cursor.fetchall()]
             entries['规格型号'].config(values=specs)
        
-    #10出库函数      
+    #8出库函数      
     def remove_part(self):
         selected = self.tree.selection()
         if not selected:
@@ -351,7 +375,7 @@ class SparePartsManager:
             search_window = tk.Toplevel(self.master)
             # 搜索界面逻辑...
         
-    #11导入函数
+    #9导入函数
     def import_data(self):
         file_path = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx")])
         if not file_path:
@@ -422,7 +446,7 @@ class SparePartsManager:
             messagebox.showerror("导入错误", f"导入失败: {str(e)}\n\n请检查：\n1. 数值列是否包含非数字\n2. 是否缺少必要列\n3. 数据格式是否符合要求")
             messagebox.showinfo("导入说明", "请确保Excel包含以下9列且数据格式正确：\n" "库房名称 | 物料编号 | 物料名称 | 规格型号\n" "物料分类 | 单位 | 库存数量(数字)|价格 | 货架编号 | 层数(数字)")
     
-    #12导出函数
+    #10导出函数
     def export_data(self):
         try:
             # 添加字段映射关系
@@ -458,7 +482,7 @@ class SparePartsManager:
         except Exception as e:
             messagebox.showerror("错误", f"导出失败：{str(e)}")
 
-    #13搜索函数
+    #11搜索函数
     def search_parts(self):
         search_window = tk.Toplevel(self.master)
         search_window.title("搜索物料")
@@ -498,7 +522,7 @@ class SparePartsManager:
         tk.Button(search_window,text="取消",command=cancel_search,width=6).pack(side='left',padx=35)
         tk.Button(search_window, text="搜索", command=perform_search,width=6).pack(side='right',padx=35)      
     
-    #14模版生成函数    
+    #12模版生成函数    
     def generate_template(self):
         #生成模版的表头
         template_df = pd.DataFrame(columns=[
@@ -518,19 +542,19 @@ class SparePartsManager:
             #在原始字符串前加  r  ，可以让字符串中的字符都按照字面意思解析，不会对  \  进行转义处理。
             messagebox.showinfo("成功",f"模版已保存到：{r'C:/Users/admin/Desktop'}") 
     
-    #15日志记录函数
-    def log_operation(self, operation_type, part_number, quantity_change, operator="system"):
-        """记录操作日志"""
+    #13日志记录函数
+    def log_operation(self, operation_type, part_number, quantity_change, operator="system", extra_info=""):
+        """增强版日志记录"""
         try:
             self.cursor.execute('''INSERT INTO operation_logs 
-                            (operation_type, part_number, quantity_change, operator)
-                            VALUES (?,?,?,?)''',
-                            (operation_type, part_number, quantity_change, operator))
+                                (operation_type, part_number, quantity_change, operator, extra_info)
+                                VALUES (?,?,?,?,?)''',
+                                (operation_type, part_number, quantity_change, operator, extra_info))
             self.conn.commit()
         except Exception as e:
-            print(f"日志记录失败：{str(e)}")
+            print(f"日志记录失败: {str(e)}")
 
-    #16创建日志查看窗口
+    #14创建日志查看窗口
     def show_logs(self):
         log_window = tk.Toplevel(self.master)
         log_window.title("操作日志")
@@ -564,7 +588,7 @@ class SparePartsManager:
         tk.Button(log_window, text="导出日志", 
                 command=lambda: self.export_logs()).pack(pady=5)
 
-    #17导出日志函数
+    #15导出日志函数
     def export_logs(self):
         """导出日志到Excel"""
         df = pd.read_sql_query("SELECT * FROM operation_logs ORDER BY operation_time DESC", self.conn)
@@ -578,7 +602,7 @@ class SparePartsManager:
             df.to_excel(save_path, index=False)
             messagebox.showinfo("成功", f"日志已导出到: {save_path}")    
 
-    #18数据清洗函数,保留1位小数
+    #16数据清洗函数,保留1位小数
     def clean_price(self,price_input):
         try:
             #数据清洗：①去除货币符号、②去除千分位逗号、③保留1位小数、④无效数据默认设为0.0
@@ -593,13 +617,21 @@ class SparePartsManager:
         except (ValueError,TypeError):
             return 0.0
 
+    #17新增库房名称管理功能（去重后的库房名称列表、刷新库房下拉列表）
+    def get_warehouse_list(self):
+        """获取去重后的库房名称列表"""
+        self.cursor.execute("SELECT DISTINCT warehouse FROM parts")
+        return [row[0] for row in self.cursor.fetchall()]
 
-    #19时间函数
+    def refresh_warehouse_list(self, combobox):
+        """刷新库房下拉列表"""
+        warehouses = self.get_warehouse_list()
+        combobox['values'] = warehouses
 
 
 
-
-#常用代码块结构，__name__是python中每个py文件都有的内置变量。当一个py文件作为主程序直接运行时，该文件中__name__变量会被赋值为__main__
+#常用代码块结构，__name__是python中每个py文件都有的内置变量。
+# 当一个py文件作为主程序直接运行时，该文件中__name__变量会被赋值为__main__
 if __name__ == "__main__":
     #调用Tk创建一个主窗口对象并赋值给root
     root = tk.Tk()
