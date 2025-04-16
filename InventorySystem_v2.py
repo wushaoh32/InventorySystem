@@ -214,10 +214,17 @@ class SparePartsManager:
         # 提交处理
         def submit():
             """整合后的提交处理"""
-            try:
+            try:   
+                #获取基础字段
                 warehouse = entries['库房名称'].get().strip()
                 part_number = entries['物料编号'].get().strip()
-                
+
+                #入库校验增强
+                if not warehouse:
+                    raise ValueError("库房名称不能为空")
+                if not part_number:
+                    raise ValueError("物料编号不能为空")      
+
                 # 校验库房是否存在
                 self.cursor.execute("SELECT 1 FROM parts WHERE warehouse=?", (warehouse,))
                 warehouse_exists = self.cursor.fetchone()
