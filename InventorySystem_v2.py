@@ -130,42 +130,141 @@ class SparePartsManager:
         self.load_data()
         messagebox.showinfo("系统提示","数据已刷新")
 
-    #6主界面数据添加函数
+    #6入库函数：入库按钮、耳机弹窗入库信息、自动补全，进行整合（看似只加了一个价格列，结果修改一天）
     def add_part(self):
+        """整合后的入库功能（含价格字段）"""
         add_window = tk.Toplevel(self.master)
-        add_window.title("入库管理")
+        add_window.title("备件入库")
         
-        labels = ['库房名称','物料编号','物料名称','规格型号','物料分类',
-                 '单位','数量','货架编号','层数']
+        # 字段配置（新增price）
+        fields = [
+            ('库房名称', 'text'), 
+            ('物料编号', 'text'),
+            ('物料名称', 'text'),
+            ('规格型号', 'combo'),
+            ('物料分类', 'text'),
+            ('单位', 'text'),
+            ('库存数量', 'number'),
+            ('价格(元)', 'number'),  # 新增价格字段
+            ('货架编号', 'text'),
+            ('层数', 'number')
+        ]
+        
         entries = {}
         
-        for idx, label in enumerate(labels):
+        # 创建输入组件
+        for idx, (label, ftype) in enumerate(fields):
             tk.Label(add_window, text=label).grid(row=idx, column=0, padx=5, pady=5)
-            entries[label] = tk.Entry(add_window, width=25)
-            entries[label].grid(row=idx, column=1, padx=5, pady=5)
             
-        # 自动填充规格型号
-        entries['物料名称'].bind('<KeyRelease>', lambda e: self.update_specification(entries))
+            if ftype == 'combo':
+                entry = ttk.Combobox(add_window, width=23)
+                entry.grid(row=idx, column=1, padx=5, pady=5)
+            else:
+                entry = tk.Entry(add_window, width=25)
+                entry.grid(row=idx, column=1, padx=5, pady=5)
+            
+            entries[label] = entry
         
-        # 自动填充已有信息
-        entries['物料编号'].bind('<FocusOut>', lambda e: self.auto_fill_info(entries))
+        # 自动填充功能
+        def auto_fill(event=None):
+            """物料编号/名称输入后自动填充"""
+            # 根据物料编号填充
+            part_number = entries['物料编号'].get()
+            if part_number:
+                self.cursor.execute("SELECT * FROM parts WHERE part_number=?", (part_number,))
+                existing = self.cursor.fetchone()
+                if existing:
+                    entries['物料名称'].delete(0, tk.END)
+                    entries['物料名称'].insert(0, existing[3])
+                    entries['规格型号'].set(existing[4])
+                    entries['物料分类'].delete(0, tk.END)
+                    entries['物料分类'].insert(0, existing[5])
+                    entries['单位'].delete(0, tk.END)
+                    entries['单位'].insert(0, existing[6])
+                    entries['价格(元)'].delete(0, tk.END)
+                    entries['价格(元)'].insert(0, f"{existing[8]:.1f}")  # 填充价格
+                    entries['货架编号'].delete(0, tk.END)
+                    entries['货架编号'].insert(0, existing[9])
+                    entries['层数'].delete(0, tk.END)
+                    entries['层数'].insert(0, existing[10])
+                    return
+            
+            # 根据物料名称更新规格型号下拉框
+            part_name = entries['物料名称'].get()
+            if part_name:
+                self.cursor.execute("SELECT DISTINCT specification FROM parts WHERE part_name LIKE ?", 
+                                (f'%{part_name}%',))
+                specs = [row[0] for row in self.cursor.fetchall()]
+                entries['规格型号'].config(values=specs)
         
-        tk.Button(add_window, text="提交", 
-                 command=lambda: self.submit_add(entries, add_window)).grid(row=len(labels), columnspan=2)
-
-    #7自动填充补全函数
-    def auto_fill_info(self, entries):
-        part_number = entries['物料编号'].get()
-        if part_number:
-            self.cursor.execute("SELECT * FROM parts WHERE part_number=?", (part_number,))
-            existing = self.cursor.fetchone()
-            if existing:
-                entries['物料名称'].insert(0, existing[3])
-                entries['规格型号'].insert(0, existing[4])
-                entries['物料分类'].insert(0, existing[5])
-                entries['单位'].insert(0, existing[6])
-                entries['货架编号'].insert(0, existing[8])
-                entries['层数'].insert(0, existing[9])
+        # 绑定事件
+        entries['物料编号'].bind('<FocusOut>', auto_fill)
+        entries['物料名称'].bind('<KeyRelease>', auto_fill)
+        
+        # 提交处理
+        def submit():
+            """整合后的提交处理"""
+            try:
+                # 数据校验
+                required_fields = ['库房名称', '物料编号', '物料名称', '规格型号', 
+                                '物料分类', '单位', '库存数量', '价格(元)']
+                for field in required_fields:
+                    if not entries[field].get().strip():
+                        raise ValueError(f"{field}不能为空")
+                
+                # 数据转换
+                data = {
+                    'warehouse': entries['库房名称'].get(),
+                    'part_number': entries['物料编号'].get(),
+                    'part_name': entries['物料名称'].get(),
+                    'specification': entries['规格型号'].get(),
+                    'category': entries['物料分类'].get(),
+                    'unit': entries['单位'].get(),
+                    'quantity': int(entries['库存数量'].get()),
+                    'price': round(float(entries['价格(元)'].get()), 1),  # 价格处理
+                    'shelf': entries['货架编号'].get(),
+                    'floor': int(entries['层数'].get() or 0),
+                    'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }
+                
+                if data['price'] < 0:
+                    raise ValueError("价格不能为负数")
+                
+                # 数据库操作
+                self.cursor.execute('''INSERT INTO parts 
+                    (warehouse, part_number, part_name, specification, 
+                    category, unit, quantity, price, shelf_number, floor, last_update)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                    ON CONFLICT(part_number) DO UPDATE SET
+                        quantity = quantity + excluded.quantity,
+                        price = excluded.price,
+                        last_update = excluded.last_update''',
+                    (data['warehouse'], data['part_number'], data['part_name'],
+                    data['specification'], data['category'], data['unit'],
+                    data['quantity'], data['price'],  # 新增价格
+                    data['shelf'], data['floor'], data['time']))
+                
+                self.conn.commit()
+                
+                # 记录日志
+                self.log_operation(
+                    operation_type="入库",
+                    part_number=data['part_number'],
+                    quantity_change=data['quantity']
+                )
+                
+                add_window.destroy()
+                self.load_data()
+                messagebox.showinfo("成功", "入库操作已完成")
+                
+            except ValueError as e:
+                messagebox.showerror("输入错误", str(e))
+            except Exception as e:
+                messagebox.showerror("系统错误", f"保存失败：{str(e)}")
+        
+        # 提交按钮
+        tk.Button(add_window, text="提交入库", command=submit, 
+                bg='#4CAF50', fg='white').grid(row=len(fields), columnspan=2, pady=10)    
 
     #8出库函数的二级界面函数
     def update_specification(self, entries):
@@ -175,48 +274,7 @@ class SparePartsManager:
                               (f'%{part_name}%',))
             specs = [row[0] for row in self.cursor.fetchall()]
             entries['规格型号'].config(values=specs)
-
-    #9入库函数
-    def submit_add(self, entries, window):
-        data = {
-            'warehouse': entries['库房名称'].get(),
-            'part_number': entries['物料编号'].get(),
-            'part_name': entries['物料名称'].get(),
-            'specification': entries['规格型号'].get(),
-            'category': entries['物料分类'].get(),
-            'unit': entries['单位'].get(),
-            'quantity': int(entries['数量'].get()),
-            'shelf': entries['货架编号'].get(),
-            'floor': int(entries['层数'].get()),
-            'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        }
-        
-        try:
-            # 获取所有输入值，日志功能的大哥
-            part_number = entries['物料编号'].get()
-            quantity = int(entries['数量'].get())
-
-            #确保在入库的方法中不删除零库存记录
-            self.cursor.execute('''UPDATE parts SET 
-                quantity=quantity+?, 
-                last_update=?
-                WHERE part_number=?''',
-                (quantity, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), part_number))
-            self.conn.commit()
-
-            # 在提交成功后添加日志记录
-            self.log_operation(
-                operation_type="入库",
-                part_number=part_number,
-                quantity_change=quantity
-            )
-
-            window.destroy()
-            self.load_data()
-            
-        except Exception as e:
-            messagebox.showerror("错误", f"保存失败：{str(e)}")
-            
+       
     #10出库函数      
     def remove_part(self):
         selected = self.tree.selection()
@@ -534,6 +592,11 @@ class SparePartsManager:
             return max(0.0,price)#确保非负数
         except (ValueError,TypeError):
             return 0.0
+
+
+    #19时间函数
+
+
 
 
 #常用代码块结构，__name__是python中每个py文件都有的内置变量。当一个py文件作为主程序直接运行时，该文件中__name__变量会被赋值为__main__
