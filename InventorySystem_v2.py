@@ -1,8 +1,15 @@
+#os是内置标准库，提供与操作系统交互的函数（创建、删除、重命名）
 import os
+#内置用于操作SQLite数据库的标准库
 import sqlite3
-import tkinter as tk#thinter创建图形界面的标准库，并简称为tk
+#thinter创建图形界面的标准库，并简称为tk
+import tkinter as tk
+#从tkinter库中导入特定的模块，ttk:主体化小部件，messagebox:各种类型的消息框，filedialog:创建文件选择对话框
+#若不单独导入，在使用时需要tkinter.messagebox.showinfo这种较长的命名
 from tkinter import ttk, messagebox, filedialog
+#从datetime模块中导入datetime类（此处模块名与类名相同），获取当前时间，
 from datetime import datetime
+#pandas是数据处理和分析，读取各种格式的数据文件
 import pandas as pd
 
 class SparePartsManager:
@@ -531,6 +538,10 @@ class SparePartsManager:
 
 #常用代码块结构，__name__是python中每个py文件都有的内置变量。当一个py文件作为主程序直接运行时，该文件中__name__变量会被赋值为__main__
 if __name__ == "__main__":
-    root = tk.Tk()#调用Tk创建一个主窗口对象并赋值给root
+    #调用Tk创建一个主窗口对象并赋值给root
+    root = tk.Tk()
+    #创建一个SparePartsManager类的实例
     app = SparePartsManager(root)
+    #mainloop是tkinter中Tk类，也就是主窗口对象，mainloop方法会持续监听用户点击按钮、输入文本、移动窗口
+    #使GUI程序进入事件循环
     root.mainloop()
