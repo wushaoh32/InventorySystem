@@ -114,15 +114,18 @@ class SparePartsManager:
     def load_data(self):
         for row in self.tree.get_children():
             self.tree.delete(row)
-            
+
+        #获取数据并插入TreeView    
         self.cursor.execute("SELECT * FROM parts")
         for row in self.cursor.fetchall():
             item = self.tree.insert('', 'end', values=row)
             if row[7] == 0:  # quantity=0
                 self.tree.item(item, tags=('zero',))
-        
+            elif row[7] == 1:
+                self.tree.item(item,tags=('low_stock',))
         # 配置零库存样式,数量为0时显示为红色，数据信息不删除，当重新入库时，变为黑色
         self.tree.tag_configure('zero', foreground='red')
+        self.tree.tag_configure('low_stock', foreground='#008000')
     
     #5刷新函数
     def refresh_data(self):
