@@ -12,6 +12,8 @@ from datetime import datetime
 #pandas是数据处理和分析，读取各种格式的数据文件
 import pandas as pd
 
+import pytz
+
 class SparePartsManager:
         #self是一个约定成俗的参数名，它代表类的实例对象本身。当你调用类的实例方法时，Python会自动将实例对象作为第一个参数传递给改方法，
         #而这个参数在方法定义中通常被命名为self
@@ -58,12 +60,11 @@ class SparePartsManager:
         self.conn.commit()
         #创建日志表
         self.cursor.execute('''CREATE TABLE IF NOT EXISTS operation_logs
-                        (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                         operation_type TEXT,
-                         part_number TEXT,
-                         quantity_change INTEGER,
-                         operator TEXT DEFAULT 'system',
-                         operation_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+                            (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            operation_type TEXT,
+                            part_number TEXT,
+                            quantity_change INTEGER,
+                            operation_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
         self.conn.commit()
    
     #3主界面窗体函数
@@ -112,6 +113,7 @@ class SparePartsManager:
 
     #4主界面数据载入函数,TreeView是Python库的组件，以树形显示数据
     def load_data(self):
+        self.cursor.execute("SELECT *, datetime(last_update, 'localtime') FROM parts")
         for row in self.tree.get_children():
             self.tree.delete(row)
 
@@ -134,7 +136,7 @@ class SparePartsManager:
         messagebox.showinfo("系统提示","数据已刷新")
 
     #6入库函数：入库按钮、耳机弹窗入库信息、自动补全，进行整合（看似只加了一个价格列，结果修改一天）
-    def add_part(self):
+    def add_part(self): 
         add_window = tk.Toplevel(self.master)
         add_window.title("备件入库")
         
@@ -217,7 +219,8 @@ class SparePartsManager:
         # 提交处理
         def submit():
             """整合后的提交处理"""
-            try:   
+            try: 
+                
                 #获取基础字段
                 warehouse = entries['库房名称'].get().strip()
                 part_number = entries['物料编号'].get().strip()
@@ -280,25 +283,25 @@ class SparePartsManager:
                 self.conn.commit()
                 
                 # 记录日志
-                self.log_operation(
-                operation_type="入库",
-                part_number=part_number,
-                quantity_change=data['quantity'],
-                extra_info=f"库房: {warehouse}"
-            )
+                quantity =int(entries['库存数量'].get())
+                self.log_operation("入库", part_number, quantity)
                 
                 add_window.destroy()
                 self.load_data()
                 messagebox.showinfo("成功", "入库操作已完成")
+
+        
                 
             except ValueError as e:
                 messagebox.showerror("输入错误", str(e))
             except Exception as e:
                 messagebox.showerror("系统错误", f"保存失败：{str(e)}")
         
+        
         # 提交按钮
         tk.Button(add_window, text="提交入库", command=submit, 
-                bg='#4CAF50', fg='white').grid(row=len(fields), columnspan=2, pady=10)    
+                bg='#4CAF50', fg='white').grid(row=len(fields), columnspan=2, pady=10)
+            
 
     #7出库函数的二级界面函数
     def update_specification(self, entries):
@@ -311,6 +314,7 @@ class SparePartsManager:
        
     #8出库函数      
     def remove_part(self):
+
         selected = self.tree.selection()
         if not selected:
             messagebox.showwarning("警告", "请先选择要出库的物料")
@@ -350,11 +354,7 @@ class SparePartsManager:
                 self.conn.commit()
                 
                 # 记录出库日志
-                self.log_operation(
-                    operation_type="出库",
-                    part_number=part_info[2],
-                    quantity_change=-qty
-                )
+                self.log_operation("出库", part_info[2], -qty)
                 
                 remove_window.destroy()
                 self.load_data()
@@ -387,6 +387,7 @@ class SparePartsManager:
         
     #9导入函数
     def import_data(self):
+
         file_path = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx")])
         if not file_path:
             return
@@ -440,6 +441,7 @@ class SparePartsManager:
                         quantity_change=row['库存数量']
                     )
                     success_count += 1
+                    self.log_operation("导入", row['物料编号'], row['库存数量'])
                 except Exception as e:
                     print(f"导入失败记录: {row['物料编号']} - 错误: {str(e)}")
             
@@ -553,13 +555,13 @@ class SparePartsManager:
             messagebox.showinfo("成功",f"模版已保存到：{r'C:/Users/admin/Desktop'}") 
     
     #13日志记录函数
-    def log_operation(self, operation_type, part_number, quantity_change, operator="system", extra_info=""):
-        """增强版日志记录"""
+    def log_operation(self, operation_type, part_number, quantity_change):
+        """基础日志记录方法"""
         try:
             self.cursor.execute('''INSERT INTO operation_logs 
-                                (operation_type, part_number, quantity_change, operator, extra_info)
-                                VALUES (?,?,?,?,?)''',
-                                (operation_type, part_number, quantity_change, operator, extra_info))
+                                (operation_type, part_number, quantity_change)
+                                VALUES (?,?,?)''',
+                                (operation_type, part_number, quantity_change))
             self.conn.commit()
         except Exception as e:
             print(f"日志记录失败: {str(e)}")
@@ -568,49 +570,64 @@ class SparePartsManager:
     def show_logs(self):
         log_window = tk.Toplevel(self.master)
         log_window.title("操作日志")
-        log_window.geometry("800x600")
         
         # 日志表格
-        tree = ttk.Treeview(log_window, columns=('ID','操作类型','物料编号','数量变化','操作人','操作时间'), show='headings')
+        tree = ttk.Treeview(log_window, columns=('ID','操作类型','物料编号','数量变化','操作时间'), show='headings')
         
         columns = [
-            ('ID', 50), ('操作类型', 80), ('物料编号', 120), 
-            ('数量变化', 80), ('操作人', 80), ('操作时间', 150)
+            ('ID', 50), 
+            ('操作类型', 80), 
+            ('物料编号', 120),
+            ('数量变化', 80), 
+            ('操作时间', 150)
         ]
         
         for col, width in columns:
             tree.heading(col, text=col)
             tree.column(col, width=width, anchor='center')
         
-        # 添加滚动条
-        scrollbar = ttk.Scrollbar(log_window, orient="vertical", command=tree.yview)
-        scrollbar.pack(side='right', fill='y')
-        tree.configure(yscrollcommand=scrollbar.set)
+        # 查询日志（按时间倒序）
+        self.cursor.execute('''SELECT 
+                            id, operation_type, part_number, 
+                            quantity_change, 
+                            datetime(operation_time, 'localtime')
+                            FROM operation_logs 
+                            ORDER BY operation_time DESC''')
         
-        # 查询并显示日志
-        self.cursor.execute("SELECT * FROM operation_logs ORDER BY operation_time DESC")
         for row in self.cursor.fetchall():
             tree.insert('', 'end', values=row)
         
         tree.pack(fill='both', expand=True)
         
-        # 添加导出按钮
+        # 导出按钮
         tk.Button(log_window, text="导出日志", 
-                command=lambda: self.export_logs()).pack(pady=5)
+                command=self.export_logs).pack(pady=5)
 
     #15导出日志函数
     def export_logs(self):
-        """导出日志到Excel"""
-        df = pd.read_sql_query("SELECT * FROM operation_logs ORDER BY operation_time DESC", self.conn)
-        file_name = f"备件操作日志_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-        save_path = filedialog.asksaveasfilename(
-            defaultextension=".xlsx",
-            initialfile=file_name,
-            filetypes=[("Excel文件", "*.xlsx")]
-        )
-        if save_path:
-            df.to_excel(save_path, index=False)
-            messagebox.showinfo("成功", f"日志已导出到: {save_path}")    
+        try:
+            # 获取日志数据
+            df = pd.read_sql_query('''SELECT 
+                                    operation_type AS 操作类型,
+                                    part_number AS 物料编号,
+                                    quantity_change AS 数量变化,
+                                    datetime(operation_time, 'localtime') AS 操作时间
+                                    FROM operation_logs''', self.conn)
+            
+            # 生成文件名
+            file_name = f"操作日志_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            save_path = filedialog.asksaveasfilename(
+                defaultextension=".xlsx",
+                initialfile=file_name,
+                filetypes=[("Excel文件", "*.xlsx")]
+            )
+            
+            if save_path:
+                df.to_excel(save_path, index=False)
+                messagebox.showinfo("成功", f"日志已导出到：{save_path}")
+                
+        except Exception as e:
+            messagebox.showerror("错误", f"导出失败：{str(e)}")  
 
     #16数据清洗函数,保留1位小数
     def clean_price(self,price_input):
@@ -638,6 +655,7 @@ class SparePartsManager:
         warehouses = self.get_warehouse_list()
         combobox['values'] = warehouses
 
+                            
 
 
 #常用代码块结构，__name__是python中每个py文件都有的内置变量。
