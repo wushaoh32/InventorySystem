@@ -313,7 +313,7 @@ class SparePartsManager:
                 self.load_data()
                 messagebox.showinfo("成功", "入库操作已完成")
                 # 发送钉钉消息（使用已定义的变量）
-                msg = f"**入库通知** \n\n" \
+                msg = f"**📦 物料入库通知** \n\n" \
                     f"- 库房名称：{warehouse} \n" \
                     f"- 物料编号：{part_number} \n" \
                     f"- 物料名称：{part_name} \n" \
