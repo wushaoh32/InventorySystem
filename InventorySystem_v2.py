@@ -629,20 +629,20 @@ class SparePartsManager:
         except Exception as e:
             messagebox.showerror("错误", f"导出失败：{str(e)}")  
 
-    #16数据清洗函数,保留1位小数
+    #16数据清洗函数,保留2位小数
     def clean_price(self,price_input):
         try:
-            #数据清洗：①去除货币符号、②去除千分位逗号、③保留1位小数、④无效数据默认设为0.0
+            #数据清洗：①去除货币符号、②去除千分位逗号、③保留2位小数、④无效数据默认设为0.0
             #isinstance(object,classinfo)是一个内置函数，用于判断一个对象是否是指定类型的实例
             #strip()是字符串对象的一个方法，用于移除字符串开头和结尾的指定字符（空格、制表、换行）
             #round()是一个内置函数，对数字进行四舍五入操作
             #max()是一个内置函数，用于返回可迭代对象中的最大元素，此处可以处理如果price中产生负数
             if isinstance(price_input,str):
                 price_input = price_input.replace('￥','').replace('$','').replace(',','').replace('，','').strip()
-            price = round(float(price_input),1)#四舍五入1位
-            return max(0.0,price)#确保非负数
+            price = round(float(price_input),2)#四舍五入2位
+            return max(0.00,price)#确保非负数
         except (ValueError,TypeError):
-            return 0.0
+            return 0.00
 
     #17新增库房名称管理功能（去重后的库房名称列表、刷新库房下拉列表）
     def get_warehouse_list(self):
