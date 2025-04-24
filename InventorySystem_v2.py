@@ -11,8 +11,14 @@ from tkinter import ttk, messagebox, filedialog
 from datetime import datetime
 #pandas是数据处理和分析，读取各种格式的数据文件
 import pandas as pd
-
 import pytz
+import requests
+import json
+import time
+import hmac
+import hashlib
+import urllib
+import base64
 
 class SparePartsManager:
         #self是一个约定成俗的参数名，它代表类的实例对象本身。当你调用类的实例方法时，Python会自动将实例对象作为第一个参数传递给改方法，
@@ -25,6 +31,12 @@ class SparePartsManager:
         #当调整表结构后需要删除旧表！！！！！！！！！！！！！！
         self.conn = sqlite3.connect('数据库.db')
         self.cursor = self.conn.cursor()
+        # 钉钉配置（需要用户自行修改）
+        self.dingtalk_webhook = "https://oapi.dingtalk.com/robot/send?access_token=ffcf37eb5141ef7d63d5a3918a99e5351f62a86974d4db6f348440693e2d6ae4"
+        self.dingtalk_secret = "SEC89bf6db53bdddf7897917f217405a3f67360874018740696bb37e437f17dec62"  
+        
+        # 在类初始化中添加
+        self.enable_dingtalk = True  # 可配置为False关闭通知
 
         #这行代码将传入构造函数的master参数赋值给实例对象master属性，此处master就指代正在创建的SparePartsManager实例
         self.master = master
@@ -35,7 +47,11 @@ class SparePartsManager:
         self.create_database()
         self.create_widgets()
         self.load_data()
-
+    # 修改发送方法
+    def send_dingtalk_msg(self, content):
+        if not self.enable_dingtalk:
+            return
+        
     #2数据库创建函数
     def create_database(self):
         #数据库结构
@@ -220,11 +236,18 @@ class SparePartsManager:
         def submit():
             """整合后的提交处理"""
             try: 
-                
-                #获取基础字段
+                # 获取所有输入值
                 warehouse = entries['库房名称'].get().strip()
                 part_number = entries['物料编号'].get().strip()
-
+                part_name = entries['物料名称'].get().strip()  
+                quantity = int(entries['库存数量'].get())
+                # 查询当前库存
+                self.cursor.execute("SELECT quantity FROM parts WHERE part_number=?", (part_number,))
+                existing = self.cursor.fetchone()
+                current_qty = existing[0] if existing else 0
+                
+                # 计算新库存
+                new_qty = current_qty + quantity
                 #入库校验增强
                 if not warehouse:
                     raise ValueError("库房名称不能为空")
@@ -289,7 +312,15 @@ class SparePartsManager:
                 add_window.destroy()
                 self.load_data()
                 messagebox.showinfo("成功", "入库操作已完成")
-
+                # 发送钉钉消息（使用已定义的变量）
+                msg = f"**入库通知** \n\n" \
+                    f"- 库房名称：{warehouse} \n" \
+                    f"- 物料编号：{part_number} \n" \
+                    f"- 物料名称：{part_name} \n" \
+                    f"- 入库数量：{quantity} \n" \
+                    f"- 最新库存：{new_qty} \n" \
+                    f"- 操作时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}"
+                self.send_dingtalk_msg(msg)
         
                 
             except ValueError as e:
@@ -336,7 +367,13 @@ class SparePartsManager:
         def confirm_remove():
             try:
                 qty = int(quantity_entry.get())
-                current_qty = int(part_info[7])  # 当前库存数量
+                selected = self.tree.selection()
+                part_info = self.tree.item(selected[0])['values']
+                warehouse = part_info[1]  # 假设物料编号在第3列
+                part_number = part_info[2]  # 假设物料编号在第3列
+                part_name = part_info[3]  # 假设物料编号在第4列
+                current_qty = part_info[7]  # 当前库存数量在第8列
+                remaining = current_qty - qty
                 
                 # 验证出库数量
                 if qty <= 0:
@@ -359,6 +396,16 @@ class SparePartsManager:
                 remove_window.destroy()
                 self.load_data()
                 messagebox.showinfo("成功", f"成功出库 {qty} 个 {part_info[3]}")
+                #钉钉
+                msg = f"**🚚 物料出库提醒** \n\n" \
+                f"- 库房名称：{warehouse} \n" \
+                f"- 物料编号：{part_number} \n" \
+                f"- 物料名称：{part_name} \n" \
+                f"- 出库数量：{qty} \n" \
+                f"- 剩余库存：{remaining} \n" \
+                f"- 操作时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}"
+
+                self.send_dingtalk_msg(msg)
                 
             except ValueError:
                 messagebox.showerror("错误", "请输入有效的正整数值")
@@ -655,6 +702,47 @@ class SparePartsManager:
         warehouses = self.get_warehouse_list()
         combobox['values'] = warehouses
 
+    def _get_dingtalk_sign(self):
+        """生成钉钉签名（如果启用了加签）"""
+        timestamp = str(round(time.time() * 1000))
+        secret_enc = self.dingtalk_secret.encode('utf-8')
+        string_to_sign = f'{timestamp}\n{self.dingtalk_secret}'
+        string_to_sign_enc = string_to_sign.encode('utf-8')
+        hmac_code = hmac.new(secret_enc, string_to_sign_enc, digestmod=hashlib.sha256).digest()
+        sign = urllib.parse.quote_plus(base64.b64encode(hmac_code))
+        return timestamp, sign
+
+    def send_dingtalk_msg(self, content):
+        """发送消息到钉钉"""
+        try:
+            headers = {"Content-Type": "application/json"}
+            
+            # 构造消息体
+            data = {
+                "msgtype": "markdown",
+                "markdown": {
+                    "title": "库存变更通知",
+                    "text": content
+                }
+            }
+            
+            # 处理加签
+            if self.dingtalk_secret:
+                timestamp, sign = self._get_dingtalk_sign()
+                url = f"{self.dingtalk_webhook}&timestamp={timestamp}&sign={sign}"
+            else:
+                url = self.dingtalk_webhook
+                
+            response = requests.post(
+                url,
+                data=json.dumps(data),
+                headers=headers
+            )
+            
+            if response.status_code != 200:
+                print("钉钉消息发送失败:", response.text)
+        except Exception as e:
+            print("钉钉消息发送异常:", str(e))
                             
 
 
