@@ -56,20 +56,35 @@ class SparePartsManager:
         self.create_database()
         self.create_widgets()
         self.load_data()
+        # 添加管理员按钮（默认隐藏）
+        self.manage_btn = tk.Button(
+            self.master,
+            text="用户管理",
+            command=self.manage_users,
+            state=tk.DISABLED  # 初始状态不可用
+        )
+        #调整按钮在上还是在下
+        self.manage_btn.pack(side='top', pady=5)
     # 钉钉发送方法
     def send_dingtalk_msg(self, content):
         if not self.enable_dingtalk:
             return
     #新加登录界面
     def init_user_db(self):
-        """初始化用户数据库"""
         conn = sqlite3.connect('user.db')
         c = conn.cursor()
         c.execute('''CREATE TABLE IF NOT EXISTS users
-                     (user_id TEXT PRIMARY KEY, user_name TEXT)''')
-        # 插入示例用户（工号：1001，姓名：张三）
+                     (
+                         user_id
+                         TEXT
+                         PRIMARY
+                         KEY,
+                         user_name
+                         TEXT
+                     )''')
+        # 初始化管理员账号
         try:
-            c.execute("INSERT OR IGNORE INTO users VALUES ('GW000001001', '张三')")
+            c.execute("INSERT OR IGNORE INTO users VALUES ('admin', '系统管理员')")
             conn.commit()
         except sqlite3.IntegrityError:
             pass
@@ -96,24 +111,153 @@ class SparePartsManager:
                   command=self.check_login).grid(row=2, columnspan=2, pady=10)
 
     def check_login(self):
-        """验证用户登录"""
+        """修改后的登录验证方法"""
         user_id = self.user_id_entry.get().strip()
         user_name = self.user_name_entry.get().strip()
 
         conn = sqlite3.connect('user.db')
         c = conn.cursor()
         c.execute("SELECT user_name FROM users WHERE user_id=? AND user_name=?",
-                    (user_id, user_name))
+                  (user_id, user_name))
         result = c.fetchone()
         conn.close()
 
         if result:
             self.current_user = {'id': user_id, 'name': user_name}
+            # 如果是管理员，启用管理按钮
+            if user_id == 'admin':
+                self.manage_btn.config(state=tk.NORMAL)
             self.login_window.destroy()
-            self.master.deiconify()  # 显示主窗口
-            self.init_main_ui()  # 初始化主界面
+            self.master.deiconify()
         else:
             messagebox.showerror("登录失败", "工号或姓名错误")
+
+        #在登录验证后更新按钮状态
+        if result:
+            self.current_user = {'id': user_id, 'name': user_name}
+            # 如果是管理员，显示管理按钮和导入按钮
+            if user_id == 'admin':
+                self.manage_btn.config(state=tk.NORMAL)
+                self.buttons['导入'].pack(side='left', padx=15, pady=10)  # 显示导入按钮
+
+
+    def manage_users(self):
+        """用户管理窗口（完整实现）"""
+        if self.current_user['id'] != 'admin':
+            messagebox.showerror("权限不足", "仅管理员可操作")
+            return
+
+        self.manage_window = tk.Toplevel(self.master)
+        self.manage_window.title("用户管理")
+        self.manage_window.geometry("400x300")
+
+        # 用户列表表格
+        self.user_tree = ttk.Treeview(
+            self.manage_window,
+            columns=('user_id', 'user_name'),
+            show='headings'
+        )
+        self.user_tree.heading('user_id', text='工号')
+        self.user_tree.column('user_id', width=100, anchor='center')
+        self.user_tree.heading('user_name', text='姓名')
+        self.user_tree.column('user_name', width=150, anchor='center')
+        self.user_tree.pack(fill='both', expand=True, padx=10, pady=10)
+
+        # 操作按钮
+        btn_frame = tk.Frame(self.manage_window)
+        btn_frame.pack(pady=5)
+
+        tk.Button(
+            btn_frame,
+            text="添加用户",
+            command=self.show_add_user_dialog
+        ).pack(side='left', padx=5)
+
+        tk.Button(
+            btn_frame,
+            text="删除用户",
+            command=self.delete_user
+        ).pack(side='left', padx=5)
+
+        # 初始化用户列表
+        self.refresh_user_list()
+
+    def refresh_user_list(self):
+        """刷新用户列表数据"""
+        for item in self.user_tree.get_children():
+            self.user_tree.delete(item)
+
+        conn = sqlite3.connect('user.db')
+        c = conn.cursor()
+        c.execute("SELECT user_id, user_name FROM users")
+        for row in c.fetchall():
+            self.user_tree.insert('', 'end', values=row)
+        conn.close()
+
+    def show_add_user_dialog(self):
+        """显示添加用户对话框"""
+        self.add_window = tk.Toplevel(self.manage_window)
+        self.add_window.title("添加用户")
+        self.add_window.grab_set()
+
+        tk.Label(self.add_window, text="工号：").grid(row=0, column=0, padx=5, pady=5)
+        self.new_id_entry = tk.Entry(self.add_window)
+        self.new_id_entry.grid(row=0, column=1, padx=5, pady=5)
+
+        tk.Label(self.add_window, text="姓名：").grid(row=1, column=0, padx=5, pady=5)
+        self.new_name_entry = tk.Entry(self.add_window)
+        self.new_name_entry.grid(row=1, column=1, padx=5, pady=5)
+
+        tk.Button(
+            self.add_window,
+            text="保存",
+            command=self.save_user
+        ).grid(row=2, columnspan=2, pady=10)
+
+    def save_user(self):
+        """保存新用户到数据库"""
+        user_id = self.new_id_entry.get().strip()
+        user_name = self.new_name_entry.get().strip()
+
+        if not user_id or not user_name:
+            messagebox.showerror("错误", "工号和姓名不能为空")
+            return
+
+        conn = sqlite3.connect('user.db')
+        c = conn.cursor()
+        try:
+            c.execute(
+                "INSERT INTO users (user_id, user_name) VALUES (?, ?)",
+                (user_id, user_name)
+            )
+            conn.commit()
+            messagebox.showinfo("成功", "用户添加成功")
+            self.refresh_user_list()
+            self.add_window.destroy()
+        except sqlite3.IntegrityError:
+            messagebox.showerror("错误", "工号已存在")
+        finally:
+            conn.close()
+
+    def delete_user(self):
+        """删除选中用户"""
+        selected = self.user_tree.selection()
+        if not selected:
+            messagebox.showerror("错误", "请选择要删除的用户")
+            return
+
+        user_id = self.user_tree.item(selected[0], 'values')[0]
+        if user_id == 'admin':
+            messagebox.showerror("错误", "不能删除管理员账号")
+            return
+
+        if messagebox.askyesno("确认", f"确定删除用户 {user_id} 吗？"):
+            conn = sqlite3.connect('user.db')
+            c = conn.cursor()
+            c.execute("DELETE FROM users WHERE user_id=?", (user_id,))
+            conn.commit()
+            conn.close()
+            self.refresh_user_list()
     #2、数据库创建函数
     def create_database(self):
         #数据库结构
@@ -150,7 +294,8 @@ class SparePartsManager:
         # 按钮区域，创建窗体部件
         button_frame = tk.Frame(self.master, bg='#DCDCDC', height=self.master.winfo_screenheight()//4)
         button_frame.pack(fill='x', padx=10, pady=5)
-
+        #修改按钮创建方式
+        self.buttons = {}
         buttons = [
             ('入库', self.add_part),
             ('出库', self.remove_part),
@@ -168,6 +313,10 @@ class SparePartsManager:
                            width=10, height=2, bg='#DCDCDC', fg='black')
             #大按钮的间距
             btn.pack(side='left', padx=10, pady=10)
+            #隐藏按钮
+            self.buttons[text] = btn
+        #初始化隐藏按钮导入
+        self.buttons['导入'].pack_forget()
 
         # 数据显示区域
         self.tree = ttk.Treeview(self.master, columns=('ID','Warehouse','PartNumber','PartName','Specification',
@@ -809,7 +958,6 @@ class SparePartsManager:
                 print("钉钉消息发送失败:", response.text)
         except Exception as e:
             print("钉钉消息发送异常:", str(e))
-                            
 
 
 #常用代码块结构，__name__是python中每个py文件都有的内置变量。
