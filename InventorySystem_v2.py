@@ -19,13 +19,22 @@ import hmac
 import hashlib
 import urllib
 import base64
+import urllib.parse
 
 class SparePartsManager:
         #self是一个约定成俗的参数名，它代表类的实例对象本身。当你调用类的实例方法时，Python会自动将实例对象作为第一个参数传递给改方法，
         #而这个参数在方法定义中通常被命名为self
-    
+    #0登录函数
+
     #1主函数
     def __init__(self, master):
+        self.master = master
+        self.current_user = None  # 存储当前用户信息
+        self.master.withdraw()  # 隐藏主窗口，等待登录
+        # 初始化用户数据库
+        self.init_user_db()
+        # 显示登录窗口
+        self.show_login()
         #__init__是类的构造函数，每当创建一个SparePartsManager实例时都会调用
         #初始化时建立连接
         #当调整表结构后需要删除旧表！！！！！！！！！！！！！！
@@ -47,12 +56,65 @@ class SparePartsManager:
         self.create_database()
         self.create_widgets()
         self.load_data()
-    # 修改发送方法
+    # 钉钉发送方法
     def send_dingtalk_msg(self, content):
         if not self.enable_dingtalk:
             return
-        
-    #2数据库创建函数
+    #新加登录界面
+    def init_user_db(self):
+        """初始化用户数据库"""
+        conn = sqlite3.connect('user.db')
+        c = conn.cursor()
+        c.execute('''CREATE TABLE IF NOT EXISTS users
+                     (user_id TEXT PRIMARY KEY, user_name TEXT)''')
+        # 插入示例用户（工号：1001，姓名：张三）
+        try:
+            c.execute("INSERT OR IGNORE INTO users VALUES ('GW000001001', '张三')")
+            conn.commit()
+        except sqlite3.IntegrityError:
+            pass
+        conn.close()
+
+    def show_login(self):
+        """显示登录窗口"""
+        self.login_window = tk.Toplevel(self.master)
+        self.login_window.title("用户登录")
+        self.login_window.grab_set()  # 模态窗口
+
+        # 工号输入
+        tk.Label(self.login_window, text="工号：").grid(row=0, column=0, padx=5, pady=5)
+        self.user_id_entry = tk.Entry(self.login_window)
+        self.user_id_entry.grid(row=0, column=1, padx=5, pady=5)
+
+        # 姓名输入
+        tk.Label(self.login_window, text="姓名：").grid(row=1, column=0, padx=5, pady=5)
+        self.user_name_entry = tk.Entry(self.login_window)
+        self.user_name_entry.grid(row=1, column=1, padx=5, pady=5)
+
+        # 登录按钮
+        tk.Button(self.login_window, text="登录",
+                  command=self.check_login).grid(row=2, columnspan=2, pady=10)
+
+    def check_login(self):
+        """验证用户登录"""
+        user_id = self.user_id_entry.get().strip()
+        user_name = self.user_name_entry.get().strip()
+
+        conn = sqlite3.connect('user.db')
+        c = conn.cursor()
+        c.execute("SELECT user_name FROM users WHERE user_id=? AND user_name=?",
+                    (user_id, user_name))
+        result = c.fetchone()
+        conn.close()
+
+        if result:
+            self.current_user = {'id': user_id, 'name': user_name}
+            self.login_window.destroy()
+            self.master.deiconify()  # 显示主窗口
+            self.init_main_ui()  # 初始化主界面
+        else:
+            messagebox.showerror("登录失败", "工号或姓名错误")
+    #2、数据库创建函数
     def create_database(self):
         #数据库结构
         #当调整表结构后需要删除旧表！！！！！！！！！！！！！！
@@ -604,11 +666,13 @@ class SparePartsManager:
     #13日志记录函数
     def log_operation(self, operation_type, part_number, quantity_change):
         """基础日志记录方法"""
+        """操作人"""
         try:
+            operator = f"{self.current_user['id']}-{self.current_user['name']}" if self.current_user else "system"
             self.cursor.execute('''INSERT INTO operation_logs 
-                                (operation_type, part_number, quantity_change)
+                                (operation_type, part_number, quantity_change,operator)
                                 VALUES (?,?,?)''',
-                                (operation_type, part_number, quantity_change))
+                                (operation_type, part_number, quantity_change, operator))
             self.conn.commit()
         except Exception as e:
             print(f"日志记录失败: {str(e)}")
@@ -715,6 +779,8 @@ class SparePartsManager:
     def send_dingtalk_msg(self, content):
         """发送消息到钉钉"""
         try:
+            operator_info = f"操作人：{self.current_user['name']}\n" if self.current_user else ""
+            full_content = f"{operator_info}{content}"
             headers = {"Content-Type": "application/json"}
             
             # 构造消息体
@@ -751,6 +817,7 @@ class SparePartsManager:
 if __name__ == "__main__":
     #调用Tk创建一个主窗口对象并赋值给root
     root = tk.Tk()
+    # 先显示登录窗口
     #创建一个SparePartsManager类的实例
     app = SparePartsManager(root)
     #mainloop是tkinter中Tk类，也就是主窗口对象，mainloop方法会持续监听用户点击按钮、输入文本、移动窗口

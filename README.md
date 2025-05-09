@@ -3,7 +3,7 @@
 #### 1、页面设计：Tkinter
 
 #### 2、模块安装
-
+        换源：pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple 
 ​	pandas模块、openyxal模块
 
 #### 3、软件打包
@@ -71,7 +71,8 @@ pyinstaller -F --onefile --noconsole  -n 备件库管理系统 InventorySystem.p
 - [x] 11、库存数据为0时，背景设置为红色，数据重新当重新入库时，变为黑色（25.4.12）
 - [ ] 12、优化页面布局
 - [ ] 13、优化日志功能时间时区错误的问题
-- [ ] 14、库房名称、物料编号、物料名称这三者实现锁定  
+- [ ] 14、库房名称、物料编号、物料名称这三者实现锁定 
+- 
 
 
 #### 说明：
@@ -134,4 +135,6 @@ git push -u origin main --force
 
 4、**正常推送**（如果本地是全新仓库）
 	点击推送
+# 数据插入
+INSERT INTO users (user_id, user_name) VALUES ('1002', '李四');
 
