@@ -572,26 +572,57 @@ class SparePartsManager:
        
     #8出库函数      
     def remove_part(self):
-
         selected = self.tree.selection()
         if not selected:
             messagebox.showwarning("警告", "请先选择要出库的物料")
             return
-        
+
         part_info = self.tree.item(selected[0])['values']
         remove_window = tk.Toplevel(self.master)
         remove_window.title("出库操作")
-        
-        # 显示物料信息（不可编辑）
-        tk.Label(remove_window, text=f"物料编号：{part_info[2]}").pack()
-        tk.Label(remove_window, text=f"物料名称：{part_info[3]}").pack()
-        tk.Label(remove_window, text=f"当前库存：{part_info[7]}").pack()
-        
-        tk.Label(remove_window, text="出库数量：").pack()
-        quantity_entry = tk.Entry(remove_window)
-        quantity_entry.pack()
+
+        # === 设置窗口大小和居中 ===
+        window_width = 400  # 加宽窗口
+        window_height = 250  # 加高窗口
+        screen_width = remove_window.winfo_screenwidth()
+        screen_height = remove_window.winfo_screenheight()
+        x = (screen_width - window_width) // 2
+        y = (screen_height - window_height) // 2
+        remove_window.geometry(f"{window_width}x{window_height}+{x}+{y}")
+        remove_window.resizable(False, False)  # 禁止调整大小
+
+        # === 使用Frame优化布局 ===
+        main_frame = tk.Frame(remove_window)
+        main_frame.pack(expand=True, padx=20, pady=20)
+
+        # === 物料信息展示 ===
+        info_frame = tk.Frame(main_frame)
+        info_frame.pack(fill='x', pady=10)
+
+        tk.Label(info_frame, text="物料编号：", font=('微软雅黑', 10)).grid(row=0, column=0, sticky='w')
+        tk.Label(info_frame, text=part_info[2], font=('微软雅黑', 10, 'bold')).grid(row=0, column=1, sticky='w')
+
+        tk.Label(info_frame, text="物料名称：", font=('微软雅黑', 10)).grid(row=1, column=0, sticky='w')
+        tk.Label(info_frame, text=part_info[3], font=('微软雅黑', 10, 'bold')).grid(row=1, column=1, sticky='w')
+
+        tk.Label(info_frame, text="当前库存：", font=('微软雅黑', 10)).grid(row=2, column=0, sticky='w', pady=5)
+        tk.Label(info_frame, text=str(part_info[7]), font=('微软雅黑', 10, 'bold')).grid(row=2, column=1, sticky='w')
+
+        # === 出库数量输入 ===
+        input_frame = tk.Frame(main_frame)
+        input_frame.pack(fill='x', pady=15)
+
+        tk.Label(input_frame, text="出库数量：", font=('微软雅黑', 10)).grid(row=0, column=0)
+        quantity_entry = tk.Entry(input_frame, width=15, font=('微软雅黑', 10))
+        quantity_entry.grid(row=0, column=1, padx=5)
+        quantity_entry.focus_set()  # 自动聚焦输入框
+
+        # === 操作按钮 ===
+        btn_frame = tk.Frame(main_frame)
+        btn_frame.pack(pady=10)
         
         def confirm_remove():
+
             try:
                 qty = int(quantity_entry.get())
                 selected = self.tree.selection()
@@ -601,7 +632,7 @@ class SparePartsManager:
                 part_name = part_info[3]  # 假设物料编号在第4列
                 current_qty = part_info[7]  # 当前库存数量在第8列
                 remaining = current_qty - qty
-                
+
                 # 验证出库数量
                 if qty <= 0:
                     messagebox.showerror("错误", "出库数量必须大于0")
@@ -636,8 +667,12 @@ class SparePartsManager:
                 
             except ValueError:
                 messagebox.showerror("错误", "请输入有效的正整数值")
-        
-        tk.Button(remove_window, text="确认出库", command=confirm_remove).pack()
+
+        tk.Button(btn_frame, text="确认出库", command=confirm_remove,
+                  width=10, bg='#FF6666', fg='white').pack(side='left', padx=10)
+
+        tk.Button(btn_frame, text="取消", command=remove_window.destroy,
+                  width=10).pack(side='left', padx=10)
 
         def import_data(self):
             file_path = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx")])
