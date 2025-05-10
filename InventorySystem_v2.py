@@ -20,12 +20,11 @@ import hashlib
 import urllib
 import base64
 import urllib.parse
+import tkinter as tk
+from tkinter import ttk, messagebox
+import sqlite3
 
 class SparePartsManager:
-        #self是一个约定成俗的参数名，它代表类的实例对象本身。当你调用类的实例方法时，Python会自动将实例对象作为第一个参数传递给改方法，
-        #而这个参数在方法定义中通常被命名为self
-    #0登录函数
-
     #1主函数
     def __init__(self, master):
         self.master = master
@@ -91,24 +90,41 @@ class SparePartsManager:
         conn.close()
 
     def show_login(self):
-        """显示登录窗口"""
+        """显示登录窗口（修改尺寸和位置）"""
         self.login_window = tk.Toplevel(self.master)
         self.login_window.title("用户登录")
-        self.login_window.grab_set()  # 模态窗口
+        self.login_window.grab_set()
+
+        # 设置窗口大小和位置
+        window_width = 300
+        window_height = 180
+        screen_width = self.login_window.winfo_screenwidth()
+        screen_height = self.login_window.winfo_screenheight()
+        x = (screen_width - window_width) // 2
+        y = (screen_height - window_height) // 2
+        self.login_window.geometry(f"{window_width}x{window_height}+{x}+{y}")
+
+        # 使用Frame容器优化布局
+        main_frame = tk.Frame(self.login_window)
+        main_frame.pack(expand=True, padx=20, pady=20)
 
         # 工号输入
-        tk.Label(self.login_window, text="工号：").grid(row=0, column=0, padx=5, pady=5)
-        self.user_id_entry = tk.Entry(self.login_window)
-        self.user_id_entry.grid(row=0, column=1, padx=5, pady=5)
+        tk.Label(main_frame, text="工号：").grid(row=0, column=0, sticky='w', pady=5)
+        self.user_id_entry = tk.Entry(main_frame, width=20)
+        self.user_id_entry.grid(row=0, column=1, pady=5)
 
         # 姓名输入
-        tk.Label(self.login_window, text="姓名：").grid(row=1, column=0, padx=5, pady=5)
-        self.user_name_entry = tk.Entry(self.login_window)
-        self.user_name_entry.grid(row=1, column=1, padx=5, pady=5)
+        tk.Label(main_frame, text="姓名：").grid(row=1, column=0, sticky='w', pady=5)
+        self.user_name_entry = tk.Entry(main_frame, width=20)
+        self.user_name_entry.grid(row=1, column=1, pady=5)
 
-        # 登录按钮
-        tk.Button(self.login_window, text="登录",
-                  command=self.check_login).grid(row=2, columnspan=2, pady=10)
+        # 登录按钮（居中显示）
+        btn_frame = tk.Frame(main_frame)
+        btn_frame.grid(row=2, columnspan=2, pady=15)
+        tk.Button(btn_frame, text="登录", command=self.check_login, width=10).pack()
+
+        # 让输入框获得焦点
+        self.user_id_entry.focus_set()
 
     def check_login(self):
         """修改后的登录验证方法"""
@@ -959,14 +975,8 @@ class SparePartsManager:
         except Exception as e:
             print("钉钉消息发送异常:", str(e))
 
-
-#常用代码块结构，__name__是python中每个py文件都有的内置变量。
-# 当一个py文件作为主程序直接运行时，该文件中__name__变量会被赋值为__main__
 if __name__ == "__main__":
-    #调用Tk创建一个主窗口对象并赋值给root
     root = tk.Tk()
-    # 先显示登录窗口
-    #创建一个SparePartsManager类的实例
     app = SparePartsManager(root)
     #mainloop是tkinter中Tk类，也就是主窗口对象，mainloop方法会持续监听用户点击按钮、输入文本、移动窗口
     #使GUI程序进入事件循环

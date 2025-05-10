@@ -137,4 +137,6 @@ git push -u origin main --force
 	点击推送
 # 数据插入
 INSERT INTO users (user_id, user_name) VALUES ('1002', '李四');
-
+# 主题
+pip install ttkbootstrap  # 提供现代化主题
+pip install pillow       # 图标和图像处理
