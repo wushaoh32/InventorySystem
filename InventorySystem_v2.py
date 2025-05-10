@@ -302,6 +302,7 @@ class SparePartsManager:
                             operation_type TEXT,
                             part_number TEXT,
                             quantity_change INTEGER,
+                            operator TEXT,
                             operation_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
         self.conn.commit()
    
@@ -843,7 +844,8 @@ class SparePartsManager:
         tk.Button(search_window,text="取消",command=cancel_search,width=6).pack(side='left',padx=35)
         tk.Button(search_window, text="搜索", command=perform_search,width=6).pack(side='right',padx=35)      
     
-    #12模版生成函数    
+    #12模版生成函数
+
     def generate_template(self):
         #生成模版的表头
         template_df = pd.DataFrame(columns=[
@@ -863,15 +865,16 @@ class SparePartsManager:
             #在原始字符串前加  r  ，可以让字符串中的字符都按照字面意思解析，不会对  \  进行转义处理。
             messagebox.showinfo("成功",f"模版已保存到：{r'C:/Users/admin/Desktop'}") 
     
-    #13日志记录函数
+    #13、日志记录函数
+    #日志操作
     def log_operation(self, operation_type, part_number, quantity_change):
         """基础日志记录方法"""
         """操作人"""
         try:
-            operator = f"{self.current_user['id']}-{self.current_user['name']}" if self.current_user else "system"
-            self.cursor.execute('''INSERT INTO operation_logs 
-                                (operation_type, part_number, quantity_change,operator)
-                                VALUES (?,?,?)''',
+            operator = self.current_user['name'] if self.current_user else 'system'
+            self.cursor.execute('''INSERT INTO operation_logs
+                                       (operation_type, part_number, quantity_change, operator)
+                                   VALUES (?, ?, ?, ?)''',
                                 (operation_type, part_number, quantity_change, operator))
             self.conn.commit()
         except Exception as e:
@@ -881,38 +884,41 @@ class SparePartsManager:
     def show_logs(self):
         log_window = tk.Toplevel(self.master)
         log_window.title("操作日志")
-        
-        # 日志表格
-        tree = ttk.Treeview(log_window, columns=('ID','操作类型','物料编号','数量变化','操作时间'), show='headings')
-        
+
+        # 修正列定义（必须与查询字段顺序完全一致）
         columns = [
-            ('ID', 50), 
-            ('操作类型', 80), 
+            ('ID', 50),
+            ('操作类型', 80),
             ('物料编号', 120),
-            ('数量变化', 80), 
-            ('操作时间', 150)
+            ('数量变化', 80),
+            ('操作人', 100),  # 新增操作人列
+            ('操作时间', 150)  # 原时间列保持最后
         ]
-        
+
+        tree = ttk.Treeview(log_window, columns=[col[0] for col in columns], show='headings')
         for col, width in columns:
             tree.heading(col, text=col)
             tree.column(col, width=width, anchor='center')
-        
-        # 查询日志（按时间倒序）
-        self.cursor.execute('''SELECT 
-                            id, operation_type, part_number, 
-                            quantity_change, 
-                            datetime(operation_time, 'localtime')
-                            FROM operation_logs 
-                            ORDER BY operation_time DESC''')
-        
+
+        # 关键修正：查询时显式指定字段顺序
+        self.cursor.execute('''SELECT id,
+                                      operation_type,
+                                      part_number,
+                                      quantity_change,
+                                      operator,
+                                      datetime(operation_time, 'localtime')
+                               FROM operation_logs
+                               ORDER BY operation_time DESC''')
+
+        # 插入数据（确保顺序与columns定义一致）
         for row in self.cursor.fetchall():
             tree.insert('', 'end', values=row)
-        
+
         tree.pack(fill='both', expand=True)
         
         # 导出按钮
         tk.Button(log_window, text="导出日志", 
-                command=self.export_logs).pack(pady=5)
+                command=self.export_logs).pack(pady=6)
 
     #15导出日志函数
     def export_logs(self):
@@ -922,6 +928,7 @@ class SparePartsManager:
                                     operation_type AS 操作类型,
                                     part_number AS 物料编号,
                                     quantity_change AS 数量变化,
+                                    operator AS 人员操作,
                                     datetime(operation_time, 'localtime') AS 操作时间
                                     FROM operation_logs''', self.conn)
             
@@ -940,7 +947,8 @@ class SparePartsManager:
         except Exception as e:
             messagebox.showerror("错误", f"导出失败：{str(e)}")  
 
-    #16数据清洗函数,保留2位小数
+    #16、数据清洗函数,保留2位小数
+    #16、数据清洗
     def clean_price(self,price_input):
         try:
             #数据清洗：①去除货币符号、②去除千分位逗号、③保留2位小数、④无效数据默认设为0.0
@@ -979,7 +987,7 @@ class SparePartsManager:
     def send_dingtalk_msg(self, content):
         """发送消息到钉钉"""
         try:
-            operator_info = f"操作人：{self.current_user['name']}\n" if self.current_user else ""
+            operator_info = f"操作人：{self.current_user['name']}\n" if self.current_user else "系统自动操作"
             full_content = f"{operator_info}{content}"
             headers = {"Content-Type": "application/json"}
             
