@@ -987,16 +987,19 @@ class SparePartsManager:
     def send_dingtalk_msg(self, content):
         """发送消息到钉钉"""
         try:
-            operator_info = f"操作人：{self.current_user['name']}\n" if self.current_user else "系统自动操作"
-            full_content = f"{operator_info}{content}"
+            # 获取操作人姓名
+            operator_name = self.current_user['name'] if self.current_user else '系统自动操作'
+
+            # 构造完整消息
+            full_content = f"**操作人：{operator_name}**\n{content}"
+
+            # 后续钉钉消息发送逻辑保持不变
             headers = {"Content-Type": "application/json"}
-            
-            # 构造消息体
             data = {
                 "msgtype": "markdown",
                 "markdown": {
                     "title": "库存变更通知",
-                    "text": content
+                    "text": full_content  # 使用包含操作人的消息
                 }
             }
             
