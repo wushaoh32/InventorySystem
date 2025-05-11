@@ -11,7 +11,8 @@
 ​	安装pyinstaller、执行打包程序
 
 ```python
-pyinstaller -F --onefile --noconsole  -n 备件库管理系统 InventorySystem.py	
+pyinstaller -F --onefile --noconsole  -n 备件库管理系统 InventorySystem_v2.py	
+pyinstaller -F --icon=app.ico --noconsole  -n 总装设备科备件管理 InventorySystem_v2.py	
 ```
 #### 4、代码逻辑
    ##### 基于Python+Sqlite的备件库管理系统

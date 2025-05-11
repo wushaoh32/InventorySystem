@@ -2,6 +2,7 @@
 import os
 #内置用于操作SQLite数据库的标准库
 import sqlite3
+import sys
 #thinter创建图形界面的标准库，并简称为tk
 import tkinter as tk
 #从tkinter库中导入特定的模块，ttk:主体化小部件，messagebox:各种类型的消息框，filedialog:创建文件选择对话框
@@ -23,10 +24,44 @@ import urllib.parse
 import tkinter as tk
 from tkinter import ttk, messagebox
 import sqlite3
+from database import DBManager
 
+USER_DB = r'\\10.253.62.19\Shares\10.253.62.19\Shares\user.db'
+
+def check_login(user_id: str, user_name: str) -> bool:
+    with DBManager(USER_DB) as db:
+        result = db.execute(
+            "SELECT user_name FROM users WHERE user_id=? AND user_name=?",
+            (user_id, user_name)
+        )
+    return len(result) > 0
+
+
+import configparser
+from pathlib import Path
+
+
+def get_config():
+    """自动定位配置文件"""
+    base_path = Path(__file__).parent
+    if getattr(
+
+            sys, 'frozen', False):  # 打包后模式
+        base_path = Path(sys.executable).parent
+
+    config = configparser.ConfigParser()
+    config.read(base_path / 'config.ini')
+    return config
+
+from tkinter import messagebox
 class SparePartsManager:
     #1主函数
     def __init__(self, master):
+        # 动态加载配置文件
+        self.config = self.load_config()
+        # 初始化数据库连接
+        self.user_db = DBManager(self.config['user_db'])
+        self.spare_db = DBManager(self.config['spare_db'])
         self.master = master
         self.current_user = None  # 存储当前用户信息
         self.master.withdraw()  # 隐藏主窗口，等待登录
@@ -37,8 +72,11 @@ class SparePartsManager:
         #__init__是类的构造函数，每当创建一个SparePartsManager实例时都会调用
         #初始化时建立连接
         #当调整表结构后需要删除旧表！！！！！！！！！！！！！！
-        self.conn = sqlite3.connect('数据库.db')
-        self.cursor = self.conn.cursor()
+        #self.conn = sqlite3.connect('数据库.db')
+        db_path = r'\\10.253.62.19\Shares\spare_parts_system\数据库.db'
+        conn = sqlite3.connect(db_path, timeout=3)
+        conn.execute("PRAGMA journal_mode=WAL")  # 启用预写日志
+        self.cursor = conn.cursor()
         # 钉钉配置（需要用户自行修改）
         self.dingtalk_webhook = "https://oapi.dingtalk.com/robot/send?access_token=ffcf37eb5141ef7d63d5a3918a99e5351f62a86974d4db6f348440693e2d6ae4"
         self.dingtalk_secret = "SEC89bf6db53bdddf7897917f217405a3f67360874018740696bb37e437f17dec62"  
@@ -64,13 +102,26 @@ class SparePartsManager:
         )
         #调整按钮在上还是在下
         self.manage_btn.pack(side='top', pady=5)
+
+    def load_config(self) -> dict:
+        """从配置文件读取路径"""
+        config = {
+            'user_db': r'\\10.253.62.19\Shares\spare_parts_system\user.db',
+            'spare_db': r'\\10.253.62.19\Shares\spare_parts_system\数据库.db'
+        }
+        return config
+
     # 钉钉发送方法
     def send_dingtalk_msg(self, content):
         if not self.enable_dingtalk:
             return
     #新加登录界面
     def init_user_db(self):
-        conn = sqlite3.connect('user.db')
+
+        db_path = r'\\10.253.62.19\Shares\spare_parts_system\user.db'
+        conn = sqlite3.connect(db_path, timeout=3)
+        conn.execute("PRAGMA journal_mode=WAL")  # 启用预写日志
+        #conn = sqlite3.connect('user.db')
         c = conn.cursor()
         c.execute('''CREATE TABLE IF NOT EXISTS users
                      (
@@ -131,7 +182,10 @@ class SparePartsManager:
         user_id = self.user_id_entry.get().strip()
         user_name = self.user_name_entry.get().strip()
 
-        conn = sqlite3.connect('user.db')
+        db_path = r'\\10.253.62.19\Shares\spare_parts_system\user.db'
+        conn = sqlite3.connect(db_path, timeout=3)
+        conn.execute("PRAGMA journal_mode=WAL")  # 启用预写日志
+        #conn = sqlite3.connect('user.db')
         c = conn.cursor()
         c.execute("SELECT user_name FROM users WHERE user_id=? AND user_name=?",
                   (user_id, user_name))
@@ -203,7 +257,10 @@ class SparePartsManager:
         for item in self.user_tree.get_children():
             self.user_tree.delete(item)
 
-        conn = sqlite3.connect('user.db')
+        db_path = r'\\10.253.62.19\Shares\spare_parts_system\user.db'
+        conn = sqlite3.connect(db_path, timeout=3)
+        conn.execute("PRAGMA journal_mode=WAL")  # 启用预写日志
+        #conn = sqlite3.connect('user.db')
         c = conn.cursor()
         c.execute("SELECT user_id, user_name FROM users")
         for row in c.fetchall():
@@ -239,7 +296,10 @@ class SparePartsManager:
             messagebox.showerror("错误", "工号和姓名不能为空")
             return
 
-        conn = sqlite3.connect('user.db')
+        db_path = r'\\10.253.62.19\Shares\spare_parts_system\user.db'
+        conn = sqlite3.connect(db_path, timeout=3)
+        conn.execute("PRAGMA journal_mode=WAL")  # 启用预写日志
+        #conn = sqlite3.connect('user.db')
         c = conn.cursor()
         try:
             c.execute(
@@ -268,7 +328,10 @@ class SparePartsManager:
             return
 
         if messagebox.askyesno("确认", f"确定删除用户 {user_id} 吗？"):
-            conn = sqlite3.connect('user.db')
+            db_path = r'\\10.253.62.19\Shares\spare_parts_system\user.db'
+            conn = sqlite3.connect(db_path, timeout=3)
+            conn.execute("PRAGMA journal_mode=WAL")  # 启用预写日志
+            #conn = sqlite3.connect('user.db')
             c = conn.cursor()
             c.execute("DELETE FROM users WHERE user_id=?", (user_id,))
             conn.commit()
@@ -278,8 +341,11 @@ class SparePartsManager:
     def create_database(self):
         #数据库结构
         #当调整表结构后需要删除旧表！！！！！！！！！！！！！！
-        self.conn = sqlite3.connect('数据库.db')
-        self.cursor = self.conn.cursor()
+        #self.conn = sqlite3.connect('数据库.db')
+        db_path = r'\\10.253.62.19\Shares\spare_parts_system\数据库.db'
+        conn = sqlite3.connect(db_path, timeout=3)
+        conn.execute("PRAGMA journal_mode=WAL")  # 启用预写日志
+        self.cursor = conn.cursor()
         #通过数据库连接对象创建一个游标对象，游标用于执行SQL语句并处理查询结果,execute是游标对象的方法,用于执行SQL语句
         #新增价格列（REAL类型存储小数）
         self.cursor.execute('''CREATE TABLE IF NOT EXISTS parts
@@ -295,7 +361,7 @@ class SparePartsManager:
                              shelf_number TEXT,
                              floor INTEGER,
                              last_update TIMESTAMP)''')
-        self.conn.commit()
+        conn.commit()
         #创建日志表
         self.cursor.execute('''CREATE TABLE IF NOT EXISTS operation_logs
                             (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -304,7 +370,8 @@ class SparePartsManager:
                             quantity_change INTEGER,
                             operator TEXT,
                             operation_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-        self.conn.commit()
+
+        conn.commit()
    
     #3主界面窗体函数
     def create_widgets(self):
